@@ -1,0 +1,331 @@
+# Database Design
+
+## 1. 데이터베이스 구성 개요
+
+본 프로젝트는 두 단계의 데이터베이스를 사용한다.
+
+### Relay Raspberry Pi
+
+* SQLite 사용
+* 수신 데이터를 1차 저장
+* 네트워크 장애 시 임시 보관
+* `UNSENT / SENT` 상태 관리
+
+### Ubuntu VM
+
+* MariaDB 사용
+* 최종 데이터 저장
+* 장기 보관
+* 데이터 조회 및 시각화에 활용
+
+SQLite와 MariaDB의 기본 데이터 구조는 최대한 동일하게 유지하여 데이터 전송과 동기화를 단순하게 구성한다.
+
+---
+
+## 2. 테이블 구성
+
+센서 데이터와 비전 데이터는 서로 성격이 다르기 때문에 별도의 테이블로 분리한다.
+
+사용 테이블:
+
+* `sensor_data`
+* `vision_data`
+
+두 테이블 모두 공통적으로 `id`와 `timestamp`를 가진다.
+
+이를 통해 나중에 시간 기준으로 두 데이터를 함께 조회하고 비교할 수 있도록 한다.
+
+또한 시간 기준 조회가 자주 발생하므로, `sensor_data`와 `vision_data`의 `timestamp` 컬럼에는 인덱스(Index)를 적용한다.
+
+
+---
+
+## 3. sensor_data
+
+센서 데이터 저장용 테이블이다.
+
+저장 대상:
+
+* 조도
+* 온도
+* 습도
+* 소음 센서값
+
+### 기본 구조
+
+| Column      | Type     | Description              |
+| ----------- | -------- | ------------------------ |
+| id          | INTEGER  | 데이터 고유 ID                |
+| timestamp   | DATETIME | Relay Raspberry Pi 수신 시간 |
+| light       | INTEGER  | 조도 센서값                   |
+| temperature | REAL     | 온도                       |
+| humidity    | REAL     | 습도                       |
+| sound       | INTEGER  | 소음 센서값                   |
+| sync_status | TEXT     | SQLite 동기화 상태            |
+
+### Timestamp Index
+
+`sensor_data`는 시간대별 조회와 정렬이 자주 발생하므로 `timestamp` 컬럼에 인덱스를 적용한다.
+
+```sql
+CREATE INDEX idx_sensor_timestamp
+ON sensor_data(timestamp);
+```
+
+이를 통해 특정 시간대의 센서 데이터를 조회하거나 시간 순서로 정렬할 때 검색 성능을 높일 수 있다.
+
+
+### sync_status
+
+SQLite에서만 사용한다.
+
+가능한 값:
+
+```text
+UNSENT
+SENT
+```
+
+* `UNSENT`
+
+  * 아직 MariaDB에 정상적으로 저장되지 않은 데이터
+
+* `SENT`
+
+  * MariaDB 저장 완료가 확인된 데이터
+
+MariaDB에서는 `sync_status` 컬럼을 사용하지 않아도 된다.
+
+---
+
+## 4. vision_data
+
+객체 탐지 결과 저장용 테이블이다.
+
+현재 비전 데이터의 상세 구조는 아직 확정되지 않았기 때문에 최소 구조만 정의한다.
+
+### 기본 구조
+
+| Column      | Type     | Description              |
+| ----------- | -------- | ------------------------ |
+| id          | INTEGER  | 데이터 고유 ID                |
+| timestamp   | DATETIME | Relay Raspberry Pi 수신 시간 |
+| object      | TEXT     | 탐지 객체 종류                 |
+| confidence  | REAL     | 객체 탐지 신뢰도                |
+| sync_status | TEXT     | SQLite 동기화 상태            |
+
+예시:
+
+```text
+id: 101
+timestamp: 2026-09-21 15:00:03
+object: car
+confidence: 0.91
+sync_status: UNSENT
+```
+
+비전 데이터의 상세 필드는 Edge Vision 구현 결과가 확정되면 추가한다.
+
+### Timestamp Index
+
+`vision_data` 역시 시간대별 객체 탐지 결과 조회와 센서 데이터와의 시간 기준 비교를 위해 `timestamp` 컬럼에 인덱스를 적용한다.
+
+```sql
+CREATE INDEX idx_vision_timestamp
+ON vision_data(timestamp);
+```
+
+
+---
+
+## 5. Timestamp 관리
+
+모든 Timestamp는 Relay Raspberry Pi에서 생성한다.
+
+데이터 흐름:
+
+```text
+Edge Device 데이터 전송
+        ↓
+Relay Raspberry Pi 수신
+        ↓
+Timestamp 생성
+        ↓
+SQLite 저장
+```
+
+센서 데이터와 비전 데이터 모두 같은 서버에서 Timestamp를 생성하여 시간 기준을 통일한다.
+
+이를 통해 나중에 두 데이터를 같은 시간대 기준으로 함께 조회할 수 있다.
+
+---
+
+## 6. 데이터 ID
+
+각 데이터 행에는 고유한 `id`를 부여한다.
+
+목적:
+
+* 데이터 식별
+* 중복 데이터 확인
+* 동기화 상태 관리
+* 재전송 데이터 식별
+
+SQLite와 MariaDB 간 데이터 전송 시 동일한 데이터를 구분할 수 있도록 고유 ID를 유지하는 방향으로 설계한다.
+
+---
+
+## 7. SQLite 저장 정책
+
+Relay Raspberry Pi가 데이터를 수신하면 먼저 SQLite에 저장한다.
+
+기본 처리:
+
+```text
+데이터 수신
+    ↓
+Timestamp 생성
+    ↓
+SQLite INSERT
+    ↓
+sync_status = UNSENT
+```
+
+SQLite는 최종 저장소가 아니라 로컬 버퍼 및 임시 저장소로 사용한다.
+
+---
+
+## 8. MariaDB 저장 정책
+
+Relay Raspberry Pi는 30초마다 SQLite에서 다음 데이터를 조회한다.
+
+```text
+sync_status = UNSENT
+```
+
+조회된 데이터를 Ubuntu VM으로 전송한다.
+
+Ubuntu VM에서 MariaDB 저장이 성공하면 `OK` ACK를 반환한다.
+
+Relay Raspberry Pi는 ACK 수신 후 SQLite 상태를 변경한다.
+
+```text
+UNSENT → SENT
+```
+
+---
+
+## 9. 센서 데이터와 비전 데이터 연결
+
+센서 데이터와 비전 데이터는 별도의 테이블에 저장한다.
+
+두 데이터를 하나의 테이블에 섞지 않고 각각 관리하되, 공통 필드인 `timestamp`를 이용하여 필요할 때 함께 조회한다.
+
+예시:
+
+```text
+sensor_data
+15:00:05
+light = 70
+temperature = 25
+humidity = 60
+sound = 430
+```
+
+```text
+vision_data
+15:00:04
+object = car
+confidence = 0.91
+```
+
+나중에 같은 시간대 또는 가까운 시간 범위를 기준으로 데이터를 함께 분석할 수 있다.
+
+---
+
+## 10. 데이터 조회 및 분석 방향
+
+MariaDB에 저장된 데이터는 이후 다양한 조건으로 조회한다.
+
+### 시간 기준
+
+* 특정 시간대 데이터 조회
+* 시간대별 차량 탐지 수
+* 시간대별 센서값 변화
+* 일별 / 시간별 데이터 집계
+
+### 센서 기준
+
+* 소음 센서값 높은 순
+* 조도 변화
+* 온도 변화
+* 습도 변화
+* 특정 센서값 범위 데이터 조회
+
+### 객체 탐지 기준
+
+* 객체 종류별 조회
+* 특정 객체 탐지 횟수
+* 시간대별 객체 탐지 수
+
+### 복합 분석
+
+`timestamp`를 기준으로 센서 데이터와 비전 데이터를 같은 시간대에서 함께 조회한다.
+
+이를 통해 예를 들어 다음과 같은 관계를 확인할 수 있다.
+
+* 차량 탐지가 많은 시간대의 소음 변화
+* 조도가 낮은 시간대의 객체 탐지 결과
+* 특정 환경 조건에서의 교통량 변화
+
+이 분석 항목은 실제 데이터가 축적된 이후 유의미한 관계가 있는지 확인하면서 확장한다.
+
+---
+
+## 11. 전체 데이터 흐름
+
+```text
+[Sensor Data]           [Vision Data]
+      │                       │
+      └──────────┬────────────┘
+                 │
+                 ▼
+        Relay Raspberry Pi
+                 │
+          Timestamp 생성
+                 │
+                 ▼
+              SQLite
+                 │
+        sync_status = UNSENT
+                 │
+                 │ 30초 단위 전송
+                 ▼
+          Ubuntu VM Server
+                 │
+                 ▼
+              MariaDB
+                 │
+                 ▼
+        데이터 조회 / 가공
+                 │
+                 ▼
+          데이터 시각화
+```
+
+---
+
+## 12. 핵심 데이터베이스 정책
+
+* 센서 데이터와 비전 데이터는 별도 테이블로 관리
+* 두 테이블 모두 `id`와 `timestamp` 보유
+* Timestamp는 Relay Raspberry Pi에서 생성
+* SQLite와 MariaDB의 기본 데이터 구조는 최대한 동일하게 유지
+* SQLite는 로컬 버퍼 및 임시 저장소 역할
+* SQLite에서 `UNSENT / SENT` 상태 관리
+* MariaDB는 최종 저장 및 장기 보관
+* `30초`마다 `UNSENT` 데이터 전송
+* MariaDB 저장 성공 ACK 수신 후 `SENT` 변경
+* `timestamp`를 이용하여 센서 데이터와 비전 데이터를 함께 조회 가능
+* 실제 데이터 축적 후 시간별·센서별·객체별 분석 및 시각화 수행
+* `sensor_data.timestamp`, `vision_data.timestamp`에 인덱스를 적용하여 시간 기준 조회 성능 향상

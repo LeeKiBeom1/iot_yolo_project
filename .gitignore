@@ -1,0 +1,16 @@
+# PlatformIO
+arduino_sensor/.pio/
+arduino_sensor/.vscode/
+
+# Relay / Ubuntu build outputs
+relay_server/relay_server
+ubuntu_server/ubuntu_server
+
+# Database / logs
+relay_server/db/*.db
+relay_server/logs/*
+ubuntu_server/logs/*
+
+# OS / editor
+.DS_Store
+Thumbs.db
