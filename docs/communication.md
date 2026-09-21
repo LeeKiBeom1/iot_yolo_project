@@ -128,6 +128,31 @@ Edge Vision Raspberry Pi와 Arduino UNO는 동일한 Relay Server의 Port `5000`
 
 JSON을 사용하여 센서 데이터와 객체 탐지 데이터를 명확하게 구분하고, 향후 데이터 항목이 추가될 경우에도 구조를 쉽게 확장할 수 있도록 한다.
 
+### TCP 메시지 프레임
+
+TCP는 송신 측의 전송 단위를 수신 측에 그대로 보존하지 않으므로 각 JSON 메시지 앞에 본문 길이를 나타내는 고정 크기 헤더를 붙인다.
+
+```text
+[4바이트 payload_length][UTF-8 JSON payload]
+```
+
+프레임 규칙:
+
+* `payload_length`는 JSON 본문의 바이트 수이다.
+* 길이는 unsigned 32-bit 정수로 표현한다.
+* 바이트 순서는 big-endian(network byte order)을 사용한다.
+* JSON 본문은 UTF-8로 인코딩한다.
+* 문자열 종료 문자 `\0`과 줄바꿈 문자는 프레임에 포함하지 않는다.
+* 수신 측은 4바이트 헤더와 지정된 길이의 본문을 각각 모두 받을 때까지 반복해서 수신한다.
+* 허용된 최대 메시지 크기를 초과하거나 본문 수신이 완료되기 전에 연결이 종료되면 해당 프레임을 폐기한다.
+
+동일한 프레임 규칙을 다음 구간에 모두 적용한다.
+
+* Arduino UNO + ESP-01 → Relay Raspberry Pi
+* Edge Vision Raspberry Pi → Relay Raspberry Pi
+* Relay Raspberry Pi → Ubuntu VM Server
+* 각 구간의 ACK 응답
+
 ---
 
 ## 5. 센서 데이터 형식
@@ -138,11 +163,16 @@ JSON을 사용하여 센서 데이터와 객체 탐지 데이터를 명확하게
 
 ```json
 {
+  "version": 1,
   "type": "sensor",
-  "light": 72,
-  "temperature": 25.4,
-  "humidity": 61,
-  "sound": 438
+  "device_id": "arduino-01",
+  "message_id": "arduino-01-000042-00000123",
+  "data": {
+    "light": 72,
+    "temperature": 25.4,
+    "humidity": 61,
+    "sound": 438
+  }
 }
 ```
 
@@ -154,14 +184,21 @@ Relay Raspberry Pi가 데이터를 수신한 시점에 Timestamp를 추가한다
 
 ```json
 {
+  "version": 1,
   "type": "sensor",
+  "device_id": "arduino-01",
+  "message_id": "arduino-01-000042-00000123",
   "timestamp": "2026-09-21T15:00:05",
-  "light": 72,
-  "temperature": 25.4,
-  "humidity": 61,
-  "sound": 438
+  "data": {
+    "light": 72,
+    "temperature": 25.4,
+    "humidity": 61,
+    "sound": 438
+  }
 }
 ```
+
+`message_id`는 송신 장치가 `<device_id>-<boot_id>-<sequence>` 형식으로 생성한다. ACK를 받지 못해 재전송할 때는 같은 ID와 같은 데이터를 사용한다.
 
 ---
 
@@ -173,9 +210,14 @@ Vision 데이터는 객체가 탐지될 때마다 Relay Raspberry Pi로 전송�
 
 ```json
 {
+  "version": 1,
   "type": "vision",
-  "object": "car",
-  "confidence": 0.91
+  "device_id": "vision-pi-01",
+  "message_id": "vision-pi-01-000015-00000427",
+  "data": {
+    "object": "car",
+    "confidence": 0.91
+  }
 }
 ```
 
@@ -183,10 +225,15 @@ Relay Raspberry Pi 수신 후:
 
 ```json
 {
+  "version": 1,
   "type": "vision",
+  "device_id": "vision-pi-01",
+  "message_id": "vision-pi-01-000015-00000427",
   "timestamp": "2026-09-21T15:00:03",
-  "object": "car",
-  "confidence": 0.91
+  "data": {
+    "object": "car",
+    "confidence": 0.91
+  }
 }
 ```
 
@@ -262,10 +309,15 @@ Ubuntu VM 전송
 
 Edge Vision Raspberry Pi 또는 Arduino UNO가 데이터를 Relay Raspberry Pi로 전송하면, Relay Raspberry Pi는 데이터를 수신한 뒤 SQLite에 저장한다.
 
-SQLite 저장이 정상적으로 완료되면 클라이언트에 다음 응답을 반환한다.
+SQLite 저장이 정상적으로 완료되면 클라이언트에 길이 헤더가 포함된 다음 JSON 응답을 반환한다.
 
-```text
-OK
+```json
+{
+  "version": 1,
+  "type": "ack",
+  "message_id": "arduino-01-000042-00000123",
+  "status": "ok"
+}
 ```
 
 의미:
@@ -275,10 +327,10 @@ OK
     ↓
 SQLite 저장 성공
     ↓
-Relay Raspberry Pi → OK 반환
+    Relay Raspberry Pi → ACK 반환
 ```
 
-즉, `OK`는 단순히 데이터를 수신했다는 의미가 아니라 **SQLite 저장까지 정상적으로 완료되었다는 의미**로 사용한다.
+즉, 성공 ACK는 단순히 데이터를 수신했다는 의미가 아니라 **해당 `message_id`가 SQLite에 정상적으로 저장되었다는 의미**로 사용한다.
 
 ---
 
@@ -286,13 +338,9 @@ Relay Raspberry Pi → OK 반환
 
 Relay Raspberry Pi가 `UNSENT` 데이터를 Ubuntu VM으로 전송하면, Ubuntu VM은 해당 데이터를 MariaDB에 저장한다.
 
-MariaDB 저장이 정상적으로 완료되면 Relay Raspberry Pi에 다음 응답을 반환한다.
+MariaDB 저장이 정상적으로 완료되면 Relay Raspberry Pi에 해당 `message_id`의 성공 ACK를 반환한다.
 
-```text
-OK
-```
-
-Relay Raspberry Pi는 `OK` 응답을 받은 경우에만 SQLite의 동기화 상태를 변경한다.
+Relay Raspberry Pi는 성공 ACK를 받은 경우에만 SQLite의 동기화 상태를 변경한다.
 
 ```text
 UNSENT → SENT
@@ -301,7 +349,7 @@ UNSENT → SENT
 ACK를 받지 못한 경우에는 다음과 같이 처리한다.
 
 ```text
-ACK 미수신
+ACK 미수신 또는 오류 ACK
     ↓
 UNSENT 상태 유지
     ↓
@@ -310,13 +358,27 @@ UNSENT 상태 유지
 
 따라서 각 ACK의 의미는 다음과 같다.
 
-* **Relay Raspberry Pi의 `OK`**
+* **Relay Raspberry Pi의 성공 ACK**
 
   * SQLite 저장 완료
 
-* **Ubuntu VM의 `OK`**
+* **Ubuntu VM의 성공 ACK**
 
   * MariaDB 저장 완료
+
+같은 `message_id`와 같은 내용이 재전송된 경우에는 새 행을 추가하지 않고 다음과 같이 성공 ACK를 반환한다.
+
+```json
+{
+  "version": 1,
+  "type": "ack",
+  "message_id": "arduino-01-000042-00000123",
+  "status": "ok",
+  "duplicate": true
+}
+```
+
+같은 `message_id`에 다른 내용이 들어오면 `MESSAGE_ID_CONFLICT` 오류로 처리한다.
 
 이를 통해 각 통신 구간에서 데이터가 실제 저장소에 정상적으로 기록되었는지 확인한다.
 
@@ -391,17 +453,17 @@ TCP 연결이 끊긴 경우 **5초 간격으로 재접속을 시도**한다.
 
 ```text
 Edge Vision Pi ───────▶ Relay Pi
-               ◀─────── OK
+               ◀─────── JSON ACK
 
 Arduino + ESP-01 ─────▶ Relay Pi
-               ◀─────── OK
+               ◀─────── JSON ACK
 
 Relay Pi ─────────────▶ Ubuntu VM
-         ◀───────────── OK
+         ◀───────────── JSON ACK
 ```
 
-* Relay Pi의 `OK` = SQLite 저장 완료
-* Ubuntu VM의 `OK` = MariaDB 저장 완료
+* Relay Pi의 성공 ACK = 해당 `message_id`의 SQLite 저장 완료
+* Ubuntu VM의 성공 ACK = 해당 `message_id`의 MariaDB 저장 완료
 
 
 ---
@@ -415,11 +477,12 @@ Relay Pi ─────────────▶ Ubuntu VM
 * 센서 데이터 전송 주기는 `5초`
 * Vision 데이터는 객체 탐지 시 즉시 전송
 * 데이터 형식은 JSON 사용
+* TCP 메시지는 `4바이트 big-endian 길이 헤더 + UTF-8 JSON 본문` 형식 사용
 * Timestamp는 Relay Raspberry Pi에서 데이터 수신 시 생성
 * 모든 데이터는 SQLite에 우선 저장
 * 초기 동기화 상태는 `UNSENT`
 * `30초`마다 `UNSENT` 데이터 전송
-* MariaDB 저장 성공 시 Ubuntu VM이 `OK` 반환
-* `OK` 수신 후 해당 데이터의 상태를 `SENT`로 변경
+* MariaDB 저장 성공 시 Ubuntu VM이 해당 `message_id`의 JSON ACK 반환
+* 성공 ACK 수신 후 해당 데이터의 상태를 `SENT`로 변경
 * 전송 실패 시 `UNSENT` 상태를 유지하고 다음 전송 주기에 재전송
 * TCP 연결 실패 시 `5초` 간격으로 재접속

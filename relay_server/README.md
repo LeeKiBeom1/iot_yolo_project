@@ -13,3 +13,10 @@ SQLite 테이블 정의는 `db/schema.sql`에서 관리합니다.
 ```bash
 sqlite3 db/road_monitor.db < db/schema.sql
 ```
+
+기존 DB에 메시지 식별 컬럼과 고유 제약을 추가하기 전에는 DB를 백업한 뒤 마이그레이션을 적용합니다.
+
+```bash
+cp db/road_monitor.db db/road_monitor.db.bak
+sqlite3 db/road_monitor.db < db/migrations/001_add_message_identity.sql
+```

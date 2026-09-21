@@ -13,3 +13,10 @@ MariaDB 테이블 정의는 `db/schema.sql`에서 관리합니다.
 ```bash
 mariadb -u <DB_USER> -p road_monitor < db/schema.sql
 ```
+
+기존 DB에 메시지 식별 컬럼과 고유 제약을 추가할 때는 먼저 백업한 뒤 마이그레이션을 적용합니다.
+
+```bash
+mariadb-dump -u <DB_USER> -p road_monitor > road_monitor_before_001.sql
+mariadb -u <DB_USER> -p road_monitor < db/migrations/001_add_message_identity.sql
+```

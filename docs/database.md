@@ -63,6 +63,8 @@ SQLite와 MariaDB의 기본 데이터 구조는 최대한 동일하게 유지하
 | Column      | Type     | Description              |
 | ----------- | -------- | ------------------------ |
 | id          | INTEGER  | 데이터 고유 ID                |
+| device_id   | TEXT     | 송신 장치 식별자                |
+| message_id  | TEXT     | 재전송 중복 방지용 고유 메시지 ID     |
 | timestamp   | DATETIME | Relay Raspberry Pi 수신 시간 |
 | light       | INTEGER  | 조도 센서값                   |
 | temperature | REAL     | 온도                       |
@@ -116,6 +118,8 @@ MariaDB에서는 `sync_status` 컬럼을 사용하지 않아도 된다.
 | Column      | Type     | Description              |
 | ----------- | -------- | ------------------------ |
 | id          | INTEGER  | 데이터 고유 ID                |
+| device_id   | TEXT     | 송신 장치 식별자                |
+| message_id  | TEXT     | 재전송 중복 방지용 고유 메시지 ID     |
 | timestamp   | DATETIME | Relay Raspberry Pi 수신 시간 |
 | object      | TEXT     | 탐지 객체 종류                 |
 | confidence  | REAL     | 객체 탐지 신뢰도                |
@@ -169,7 +173,7 @@ SQLite 저장
 
 ## 6. 데이터 ID
 
-각 데이터 행에는 고유한 `id`를 부여한다.
+각 데이터 행에는 DB 내부 기본 키인 `id`와 장치가 생성하는 `message_id`를 부여한다.
 
 목적:
 
@@ -178,7 +182,14 @@ SQLite 저장
 * 동기화 상태 관리
 * 재전송 데이터 식별
 
-SQLite와 MariaDB 간 데이터 전송 시 동일한 데이터를 구분할 수 있도록 고유 ID를 유지하는 방향으로 설계한다.
+`message_id`는 `<device_id>-<boot_id>-<sequence>` 형식을 사용한다. Arduino는 부팅 시 EEPROM의 `boot_id`를 한 번 증가시키고, Vision Pi는 로컬 파일의 `boot_id`를 증가시킨다. 각 장치는 실행 중 `sequence`를 메모리에서 증가시킨다.
+
+송신 장치는 ACK를 받지 못한 데이터를 재전송할 때 같은 `message_id`와 같은 내용을 사용한다. SQLite와 MariaDB의 `message_id`에는 `UNIQUE` 제약을 적용하여 재전송으로 인한 중복 행 생성을 방지한다.
+
+* 같은 ID와 같은 내용: 새 행을 만들지 않고 성공 ACK 반환
+* 같은 ID와 다른 내용: `MESSAGE_ID_CONFLICT` 오류 반환
+* `id`: 각 DB 내부에서 사용하는 자동 증가 기본 키
+* `message_id`: 장치부터 MariaDB까지 유지하는 전송 데이터 식별자
 
 ---
 
@@ -212,7 +223,7 @@ sync_status = UNSENT
 
 조회된 데이터를 Ubuntu VM으로 전송한다.
 
-Ubuntu VM에서 MariaDB 저장이 성공하면 `OK` ACK를 반환한다.
+Ubuntu VM에서 MariaDB 저장이 성공하면 해당 `message_id`의 JSON ACK를 반환한다.
 
 Relay Raspberry Pi는 ACK 수신 후 SQLite 상태를 변경한다.
 

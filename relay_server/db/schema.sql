@@ -1,5 +1,7 @@
 CREATE TABLE IF NOT EXISTS sensor_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    message_id TEXT NOT NULL UNIQUE,
     timestamp TEXT NOT NULL,
     light INTEGER,
     temperature REAL,
@@ -13,6 +15,8 @@ ON sensor_data(timestamp);
 
 CREATE TABLE IF NOT EXISTS vision_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    message_id TEXT NOT NULL UNIQUE,
     timestamp TEXT NOT NULL,
     object TEXT,
     confidence REAL,
