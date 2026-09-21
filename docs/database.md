@@ -20,6 +20,13 @@
 
 SQLite와 MariaDB의 기본 데이터 구조는 최대한 동일하게 유지하여 데이터 전송과 동기화를 단순하게 구성한다.
 
+테이블 생성 쿼리는 서버별 스키마 파일로 버전 관리한다.
+
+* Relay SQLite: `relay_server/db/schema.sql`
+* Ubuntu MariaDB: `ubuntu_server/db/schema.sql`
+
+문서의 테이블 설명과 실제 스키마가 달라지지 않도록 DB 구조를 변경할 때는 해당 `schema.sql`과 이 문서를 함께 수정한다.
+
 ---
 
 ## 2. 테이블 구성
