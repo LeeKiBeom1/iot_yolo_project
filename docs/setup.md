@@ -454,11 +454,13 @@ road_monitor
 ubuntu
 ```
 
-현재 개발용 비밀번호:
+비밀번호:
 
 ```text
-ubuntu
+문서에 기록하지 않음
 ```
+
+실제 비밀번호는 Git 저장소에 기록하지 않고 별도로 관리한다.
 
 DB 생성:
 
@@ -469,7 +471,7 @@ CREATE DATABASE road_monitor;
 사용자 생성 예시:
 
 ```sql
-CREATE USER 'ubuntu'@'%' IDENTIFIED BY 'ubuntu';
+CREATE USER 'ubuntu'@'%' IDENTIFIED BY '<DB_PASSWORD>';
 ```
 
 권한 부여:

@@ -14,3 +14,6 @@ ubuntu_server/logs/*
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Project images
+img/
