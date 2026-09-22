@@ -8,6 +8,7 @@
 #define DB_SAVE_ERROR -1
 #define DB_SAVE_OK 0
 #define DB_SAVE_DUPLICATE 1
+#define DB_SAVE_CONFLICT 2
 
 MYSQL *database_connect(void);
 void database_close(MYSQL *database);

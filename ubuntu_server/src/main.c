@@ -58,10 +58,13 @@ static void handle_client(int clnt_sock, MYSQL *database)
         if (create_ack_json(strcmp(type, "sensor") == 0
                                 ? sensor_message.message_id
                                 : message.message_id,
-                            save_result == DB_SAVE_ERROR ? "error" : "ok",
+                            save_result == DB_SAVE_OK ||
+                            save_result == DB_SAVE_DUPLICATE ? "ok" : "error",
                             save_result == DB_SAVE_DUPLICATE,
-                            save_result == DB_SAVE_ERROR
-                                ? "DATABASE_ERROR" : NULL,
+                            save_result == DB_SAVE_CONFLICT
+                                ? "MESSAGE_ID_CONFLICT"
+                                : save_result == DB_SAVE_ERROR
+                                    ? "DATABASE_ERROR" : NULL,
                             ack, sizeof(ack)) < 0) {
             fprintf(stderr, "Failed to create ACK JSON\n");
             break;

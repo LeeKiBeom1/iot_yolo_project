@@ -13,6 +13,8 @@ DB_NAME=road_monitor ./ubuntu_server
 
 Sensor 메시지는 `sensor_data`, Vision 메시지는 객체 한 건당 `vision_data` 한 행으로 저장합니다. 저장 성공 후 `status: "ok"` ACK를 반환하며, 이미 저장된 `message_id`가 다시 수신되면 새 행을 만들지 않고 `duplicate: true`를 포함한 성공 ACK를 반환합니다. DB 저장 실패 시에는 `status: "error"`, `error_code: "DATABASE_ERROR"` ACK를 반환합니다.
 
+같은 `message_id`가 다시 들어오면 기존 행의 실제 데이터와 새 메시지를 비교합니다. 내용까지 같으면 정상 재전송으로 처리하고, 내용이 다르면 `status: "error"`, `error_code: "MESSAGE_ID_CONFLICT"` ACK를 반환합니다.
+
 현재 서버는 순차 처리 방식으로 계속 실행됩니다. 한 클라이언트가 연결되어 있는 동안 여러 메시지를 처리하고, 연결이 종료되면 다음 클라이언트 접속을 기다립니다. 다중 클라이언트 동시 처리는 이후 `epoll` 기반으로 확장합니다.
 
 ## Database schema

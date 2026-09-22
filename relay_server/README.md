@@ -20,7 +20,7 @@ Raspberry Pi 4에서 실행되는 중계 서버 코드가 위치합니다.
 
 Ubuntu 연결에 실패하면 `UNSENT` 상태를 유지하고 다음 센서 메시지를 수신하거나 Relay 서버가 다시 시작될 때 재전송합니다. 고정 주기 타이머는 사용하지 않으며, 다중 클라이언트 처리는 이후 `epoll` 이벤트 루프에서 구현합니다.
 
-동일한 `message_id`는 새 행으로 저장하지 않고 `duplicate: true` ACK를 반환합니다. 동일 ID에 서로 다른 내용이 들어오는 `MESSAGE_ID_CONFLICT` 판정은 `epoll` 전환 전 신뢰성 처리 단계에서 추가합니다.
+동일한 `message_id`와 동일한 내용은 새 행으로 저장하지 않고 `duplicate: true` ACK를 반환합니다. 동일한 `message_id`로 다른 센서값이 들어오면 `MESSAGE_ID_CONFLICT` 오류 ACK를 반환합니다.
 
 ## Database schema
 

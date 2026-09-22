@@ -34,16 +34,20 @@ static void handle_client(int client_socket, sqlite3 *database,
 
         save_result = database_save_sensor(database, &message);
         if (create_ack_json(message.message_id,
-                            save_result == DB_SAVE_ERROR ? "error" : "ok",
+                            save_result == DB_SAVE_OK ||
+                            save_result == DB_SAVE_DUPLICATE ? "ok" : "error",
                             save_result == DB_SAVE_DUPLICATE,
-                            save_result == DB_SAVE_ERROR
-                                ? "DATABASE_ERROR" : NULL,
+                            save_result == DB_SAVE_CONFLICT
+                                ? "MESSAGE_ID_CONFLICT"
+                                : save_result == DB_SAVE_ERROR
+                                    ? "DATABASE_ERROR" : NULL,
                             ack, sizeof(ack)) < 0 ||
             send_frame(client_socket, ack) < 0) {
             break;
         }
 
-        if (save_result != DB_SAVE_ERROR &&
+        if ((save_result == DB_SAVE_OK ||
+             save_result == DB_SAVE_DUPLICATE) &&
             sync_unsent_sensors(database, ubuntu_ip, UBUNTU_PORT) < 0) {
             fprintf(stderr, "Ubuntu sync deferred\n");
         }

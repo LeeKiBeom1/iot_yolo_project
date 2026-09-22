@@ -8,6 +8,7 @@
 #define DB_SAVE_ERROR -1
 #define DB_SAVE_OK 0
 #define DB_SAVE_DUPLICATE 1
+#define DB_SAVE_CONFLICT 2
 
 sqlite3 *database_open(const char *path);
 void database_close(sqlite3 *database);

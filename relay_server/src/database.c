@@ -20,6 +20,48 @@ void database_close(sqlite3 *database)
     if (database != NULL) sqlite3_close(database);
 }
 
+static int check_sensor_duplicate(sqlite3 *database,
+                                  const SensorMessage *message)
+{
+    static const char sql[] =
+        "SELECT device_id,light,temperature,humidity,sound "
+        "FROM sensor_data WHERE message_id=?";
+    sqlite3_stmt *statement;
+    const char *device_id;
+    double temperature_difference;
+    double humidity_difference;
+    int result = DB_SAVE_ERROR;
+
+    if (sqlite3_prepare_v2(database, sql, -1, &statement, NULL) != SQLITE_OK) {
+        return DB_SAVE_ERROR;
+    }
+
+    sqlite3_bind_text(statement, 1, message->message_id, -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(statement) == SQLITE_ROW) {
+        device_id = (const char *)sqlite3_column_text(statement, 0);
+        temperature_difference =
+            sqlite3_column_double(statement, 2) - message->temperature;
+        humidity_difference =
+            sqlite3_column_double(statement, 3) - message->humidity;
+        if (temperature_difference < 0) temperature_difference *= -1;
+        if (humidity_difference < 0) humidity_difference *= -1;
+
+        if (device_id != NULL &&
+            strcmp(device_id, message->device_id) == 0 &&
+            sqlite3_column_int(statement, 1) == message->light &&
+            temperature_difference < 0.0001 &&
+            humidity_difference < 0.0001 &&
+            sqlite3_column_int(statement, 4) == message->sound) {
+            result = DB_SAVE_DUPLICATE;
+        } else {
+            result = DB_SAVE_CONFLICT;
+        }
+    }
+
+    sqlite3_finalize(statement);
+    return result;
+}
+
 int database_save_sensor(sqlite3 *database, const SensorMessage *message)
 {
     static const char sql[] =
@@ -45,7 +87,9 @@ int database_save_sensor(sqlite3 *database, const SensorMessage *message)
     sqlite3_finalize(statement);
 
     if (step_result == SQLITE_DONE) return DB_SAVE_OK;
-    if (step_result == SQLITE_CONSTRAINT) return DB_SAVE_DUPLICATE;
+    if (step_result == SQLITE_CONSTRAINT) {
+        return check_sensor_duplicate(database, message);
+    }
     fprintf(stderr, "SQLite insert failed: %s\n", sqlite3_errmsg(database));
     return DB_SAVE_ERROR;
 }
