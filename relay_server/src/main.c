@@ -4,6 +4,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
+#include "json.h"
 #include "server.h"
 
 #define SERVER_IP "10.10.16.51"
@@ -14,6 +15,7 @@ int main(void)
     int sock;
     struct sockaddr_in serv_addr;
     char buf[MAX_MESSAGE_SIZE + 1];
+    const char *message_id = "relay-test-000001-00000001";
     const char *json =
         "{\"version\":1,\"type\":\"sensor\","
         "\"device_id\":\"relay-test\","
@@ -52,6 +54,12 @@ int main(void)
 
     if (recv_frame(sock, buf, sizeof(buf)) <= 0) {
         fprintf(stderr, "Failed to receive ACK frame\n");
+        close(sock);
+        return 1;
+    }
+
+    if (validate_ack_json(buf, message_id) < 0) {
+        fprintf(stderr, "Invalid ACK: %s\n", buf);
         close(sock);
         return 1;
     }

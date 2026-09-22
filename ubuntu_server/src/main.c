@@ -4,6 +4,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
+#include "json.h"
 #include "server.h"
 
 #define PORT 5001
@@ -13,10 +14,8 @@ int main(void)
     int serv_sock, clnt_sock;
     struct sockaddr_in serv_addr;
     char buf[MAX_MESSAGE_SIZE + 1];
-    const char *ack =
-        "{\"version\":1,\"type\":\"ack\","
-        "\"message_id\":\"relay-test-000001-00000001\","
-        "\"status\":\"ok\"}";
+    char ack[MAX_MESSAGE_SIZE + 1];
+    char message_id[65];
 
     serv_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (serv_sock < 0) {
@@ -58,6 +57,20 @@ int main(void)
     }
 
     printf("Received: %s\n", buf);
+
+    if (parse_message_id(buf, message_id, sizeof(message_id)) < 0) {
+        fprintf(stderr, "Invalid JSON message\n");
+        close(clnt_sock);
+        close(serv_sock);
+        return 1;
+    }
+
+    if (create_ack_json(message_id, ack, sizeof(ack)) < 0) {
+        fprintf(stderr, "Failed to create ACK JSON\n");
+        close(clnt_sock);
+        close(serv_sock);
+        return 1;
+    }
 
     if (send_frame(clnt_sock, ack) < 0) {
         fprintf(stderr, "Failed to send ACK frame\n");
