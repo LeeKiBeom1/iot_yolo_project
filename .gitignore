@@ -1,6 +1,7 @@
 # PlatformIO
 arduino_sensor/.pio/
 arduino_sensor/.vscode/
+arduino_sensor/include/wifi_config.h
 
 # Relay / Ubuntu build outputs
 relay_server/relay_server

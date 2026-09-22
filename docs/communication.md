@@ -151,7 +151,8 @@ TCP는 송신 측의 전송 단위를 수신 측에 그대로 보존하지 않�
 * Arduino UNO + ESP-01 → Relay Raspberry Pi
 * Edge Vision Raspberry Pi → Relay Raspberry Pi
 * Relay Raspberry Pi → Ubuntu VM Server
-* 각 구간의 ACK 응답
+* Vision–Relay 및 Relay–Ubuntu 구간의 ACK 응답
+* Arduino–Relay 구간은 송신 전용
 
 ---
 
@@ -336,11 +337,11 @@ Ubuntu VM 전송
 
 ## 10. ACK 처리
 
-본 시스템에서는 **두 구간 모두 ACK를 사용**한다.
+Vision Client와 Relay–Ubuntu 구간은 ACK를 사용한다. Arduino UNO는 메모리 제약으로 ACK를 처리하지 않는 송신 전용 장치로 운용한다.
 
 ### 1차 ACK — Edge Device → Relay Raspberry Pi
 
-Edge Vision Raspberry Pi 또는 Arduino UNO가 데이터를 Relay Raspberry Pi로 전송하면, Relay Raspberry Pi는 데이터를 수신한 뒤 SQLite에 저장한다.
+Edge Vision Raspberry Pi가 데이터를 Relay Raspberry Pi로 전송하면, Relay Raspberry Pi는 데이터를 수신한 뒤 SQLite에 저장한다.
 
 SQLite 저장이 정상적으로 완료되면 클라이언트에 길이 헤더가 포함된 다음 JSON 응답을 반환한다.
 
@@ -348,7 +349,7 @@ SQLite 저장이 정상적으로 완료되면 클라이언트에 길이 헤더�
 {
   "version": 1,
   "type": "ack",
-  "message_id": "arduino-01-000042-00000123",
+  "message_id": "vision-pi-01-000015-00000427",
   "status": "ok"
 }
 ```
@@ -425,7 +426,9 @@ UNSENT 상태 유지
 }
 ```
 
-클라이언트는 ACK의 `message_id`가 전송한 메시지와 같은지 확인한다. `status`가 `ok`이면 완료 처리하고, 제한 시간 안에 ACK를 받지 못하면 같은 JSON과 같은 `message_id`로 재전송한다.
+Vision Client는 ACK의 `message_id`가 전송한 메시지와 같은지 확인한다. `status`가 `ok`이면 완료 처리하고, 제한 시간 안에 ACK를 받지 못하면 같은 JSON과 같은 `message_id`로 재전송한다.
+
+Arduino UNO는 ESP-01의 `SEND OK`까지만 확인하고 다음 측정을 진행한다. 이는 TCP 송신 완료를 의미하며 Relay SQLite 저장을 보장하지 않는다. Arduino–Relay 장애 시 일부 센서 데이터가 유실될 수 있으며, 현재 MVP에서는 5초마다 새 데이터가 생성되는 특성을 고려해 이를 허용한다.
 
 이를 통해 각 통신 구간에서 데이터가 실제 저장소에 정상적으로 기록되었는지 확인한다.
 
@@ -502,8 +505,7 @@ TCP 연결이 끊긴 경우 **5초 간격으로 재접속을 시도**한다.
 Edge Vision Pi ───────▶ Relay Pi
                ◀─────── JSON ACK
 
-Arduino + ESP-01 ─────▶ Relay Pi
-               ◀─────── JSON ACK
+Arduino + ESP-01 ─────▶ Relay Pi (송신 전용)
 
 Relay Pi ─────────────▶ Ubuntu VM
          ◀───────────── JSON ACK
@@ -511,6 +513,7 @@ Relay Pi ─────────────▶ Ubuntu VM
 
 * Relay Pi의 성공 ACK = 해당 `message_id`의 SQLite 저장 완료
 * Ubuntu VM의 성공 ACK = 해당 `message_id`의 MariaDB 저장 완료
+* Arduino UNO는 Relay ACK를 수신하거나 재전송하지 않음
 
 
 ---
@@ -522,6 +525,7 @@ Relay Pi ─────────────▶ Ubuntu VM
 * Relay Raspberry Pi 수신 Port는 `5000`
 * Ubuntu VM 수신 Port는 `5001`
 * 센서 데이터 전송 주기는 `5초`
+* Arduino UNO는 송신 전용이며 ESP-01의 `SEND OK`까지만 확인
 * Vision 데이터는 객체 탐지 시 즉시 전송
 * 데이터 형식은 JSON 사용
 * TCP 메시지는 `4바이트 big-endian 길이 헤더 + UTF-8 JSON 본문` 형식 사용
