@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -Iinclude
-LIBS = -lsqlite3 -lcjson
+CFLAGS = -Wall -Wextra -Iinclude -pthread
+LIBS = -lsqlite3 -lcjson -pthread
 
 TARGET = relay_server
 SRC = $(wildcard src/*.c)
@@ -10,4 +10,3 @@ $(TARGET): $(SRC)
 
 clean:
 	rm -f $(TARGET)
-

@@ -59,16 +59,24 @@ bool sendCommand(const char *command, const char *expected,
 }
 
 bool startEsp() {
-  esp.begin(38400);
-  for (uint8_t attempt = 0; attempt < 3; attempt++) {
+  const unsigned long baudRates[] = {9600, 38400, 57600, 115200};
+
+  for (const unsigned long baudRate : baudRates) {
+    Serial.print("Testing ESP baud: ");
+    Serial.println(baudRate);
+    esp.begin(baudRate);
+    delay(300);
+
     if (sendCommand("AT", "OK", 1500)) {
-      Serial.println("ESP baud rate: 38400");
+      Serial.print("ESP baud rate: ");
+      Serial.println(baudRate);
       if (!sendCommand("AT+RST", "ready", 5000)) {
         return false;
       }
       delay(1000);
       return sendCommand("AT", "OK", 1500);
     }
+    esp.end();
   }
   return false;
 }

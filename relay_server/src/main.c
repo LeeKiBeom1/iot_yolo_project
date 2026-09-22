@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,14 @@
 #define PORT 5000
 #define UBUNTU_PORT 5001
 #define DATABASE_PATH "db/road_monitor.db"
+
+typedef struct {
+    int client_socket;
+    sqlite3 *database;
+    const char *ubuntu_ip;
+} ClientContext;
+
+static pthread_mutex_t database_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void handle_client(int client_socket, sqlite3 *database,
                           const char *ubuntu_ip)
@@ -47,14 +56,18 @@ static void handle_client(int client_socket, sqlite3 *database,
                 break;
             }
             message_id = sensor_message.message_id;
+            pthread_mutex_lock(&database_mutex);
             save_result = database_save_sensor(database, &sensor_message);
+            pthread_mutex_unlock(&database_mutex);
         } else if (strcmp(type, "vision") == 0) {
             if (parse_vision_json(buffer, &vision_message) < 0) {
                 fprintf(stderr, "Invalid vision message\n");
                 break;
             }
             message_id = vision_message.message_id;
+            pthread_mutex_lock(&database_mutex);
             save_result = database_save_vision(database, &vision_message);
+            pthread_mutex_unlock(&database_mutex);
         } else {
             fprintf(stderr, "Unsupported message type\n");
             break;
@@ -75,9 +88,11 @@ static void handle_client(int client_socket, sqlite3 *database,
 
         if ((save_result == DB_SAVE_OK ||
              save_result == DB_SAVE_DUPLICATE)) {
+            pthread_mutex_lock(&database_mutex);
             sync_result = strcmp(type, "sensor") == 0
                 ? sync_unsent_sensors(database, ubuntu_ip, UBUNTU_PORT)
                 : sync_unsent_vision(database, ubuntu_ip, UBUNTU_PORT);
+            pthread_mutex_unlock(&database_mutex);
         } else {
             sync_result = 0;
         }
@@ -87,11 +102,24 @@ static void handle_client(int client_socket, sqlite3 *database,
     }
 }
 
+static void *client_thread(void *argument)
+{
+    ClientContext *context = argument;
+
+    handle_client(context->client_socket, context->database,
+                  context->ubuntu_ip);
+    close(context->client_socket);
+    free(context);
+    return NULL;
+}
+
 int main(void)
 {
     int server_socket;
     int client_socket;
     int reuse_address = 1;
+    pthread_t thread;
+    ClientContext *context;
     struct sockaddr_in server_address;
     sqlite3 *database;
     const char *ubuntu_ip = getenv("UBUNTU_SERVER_IP");
@@ -143,8 +171,21 @@ int main(void)
             perror("accept");
             break;
         }
-        handle_client(client_socket, database, ubuntu_ip);
-        close(client_socket);
+        context = malloc(sizeof(*context));
+        if (context == NULL) {
+            close(client_socket);
+            continue;
+        }
+        context->client_socket = client_socket;
+        context->database = database;
+        context->ubuntu_ip = ubuntu_ip;
+
+        if (pthread_create(&thread, NULL, client_thread, context) != 0) {
+            close(client_socket);
+            free(context);
+            continue;
+        }
+        pthread_detach(thread);
     }
 
     close(server_socket);

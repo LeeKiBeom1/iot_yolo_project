@@ -6,7 +6,7 @@ Raspberry Pi 4에서 실행되는 중계 서버 코드가 위치합니다.
 
 ## 현재 센서 처리 흐름
 
-현재 최소 구현은 TCP 포트 `5000`에서 Arduino 센서 JSON을 순차적으로 수신합니다.
+현재 구현은 TCP 포트 `5000`에서 연결별 `pthread`를 사용해 Arduino 센서와 Vision JSON을 동시에 수신합니다.
 
 ```text
 센서 JSON 수신
@@ -18,7 +18,7 @@ Raspberry Pi 4에서 실행되는 중계 서버 코드가 위치합니다.
 → SQLite 상태를 SENT로 변경
 ```
 
-Ubuntu 연결에 실패하면 `UNSENT` 상태를 유지하고 다음 센서 메시지를 수신하거나 Relay 서버가 다시 시작될 때 재전송합니다. 고정 주기 타이머는 사용하지 않으며, 다중 클라이언트 처리는 이후 `epoll` 이벤트 루프에서 구현합니다.
+Ubuntu 연결에 실패하면 `UNSENT` 상태를 유지하고 다음 메시지를 수신하거나 Relay 서버가 다시 시작될 때 재전송합니다. 고정 주기 타이머는 사용하지 않으며, 공유 SQLite 접근은 mutex로 보호합니다.
 
 동일한 `message_id`와 동일한 내용은 새 행으로 저장하지 않고 `duplicate: true` ACK를 반환합니다. 동일한 `message_id`로 다른 센서값이 들어오면 `MESSAGE_ID_CONFLICT` 오류 ACK를 반환합니다.
 
