@@ -6,6 +6,7 @@
 typedef struct {
     char device_id[33];
     char message_id[65];
+    char timestamp[20];
     uint64_t frame_id;
     int64_t timestamp_ms;
     int class_id;

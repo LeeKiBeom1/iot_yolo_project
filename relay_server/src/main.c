@@ -20,20 +20,47 @@ static void handle_client(int client_socket, sqlite3 *database,
 {
     char buffer[MAX_MESSAGE_SIZE + 1];
     char ack[MAX_MESSAGE_SIZE + 1];
-    SensorMessage message;
+    char type[16];
+    const char *message_id;
+    SensorMessage sensor_message;
+    VisionMessage vision_message;
     int receive_result;
     int save_result;
+    int sync_result;
 
     while (1) {
         receive_result = recv_frame(client_socket, buffer, sizeof(buffer));
         if (receive_result == 0) break;
-        if (receive_result < 0 || parse_sensor_json(buffer, &message) < 0) {
-            fprintf(stderr, "Invalid sensor message\n");
+        if (receive_result < 0) {
+            fprintf(stderr, "Failed to receive frame\n");
             break;
         }
 
-        save_result = database_save_sensor(database, &message);
-        if (create_ack_json(message.message_id,
+        if (parse_message_type(buffer, type, sizeof(type)) < 0) {
+            fprintf(stderr, "Invalid JSON message\n");
+            break;
+        }
+
+        if (strcmp(type, "sensor") == 0) {
+            if (parse_sensor_json(buffer, &sensor_message) < 0) {
+                fprintf(stderr, "Invalid sensor message\n");
+                break;
+            }
+            message_id = sensor_message.message_id;
+            save_result = database_save_sensor(database, &sensor_message);
+        } else if (strcmp(type, "vision") == 0) {
+            if (parse_vision_json(buffer, &vision_message) < 0) {
+                fprintf(stderr, "Invalid vision message\n");
+                break;
+            }
+            message_id = vision_message.message_id;
+            save_result = database_save_vision(database, &vision_message);
+        } else {
+            fprintf(stderr, "Unsupported message type\n");
+            break;
+        }
+
+        if (create_ack_json(message_id,
                             save_result == DB_SAVE_OK ||
                             save_result == DB_SAVE_DUPLICATE ? "ok" : "error",
                             save_result == DB_SAVE_DUPLICATE,
@@ -47,8 +74,14 @@ static void handle_client(int client_socket, sqlite3 *database,
         }
 
         if ((save_result == DB_SAVE_OK ||
-             save_result == DB_SAVE_DUPLICATE) &&
-            sync_unsent_sensors(database, ubuntu_ip, UBUNTU_PORT) < 0) {
+             save_result == DB_SAVE_DUPLICATE)) {
+            sync_result = strcmp(type, "sensor") == 0
+                ? sync_unsent_sensors(database, ubuntu_ip, UBUNTU_PORT)
+                : sync_unsent_vision(database, ubuntu_ip, UBUNTU_PORT);
+        } else {
+            sync_result = 0;
+        }
+        if (sync_result < 0) {
             fprintf(stderr, "Ubuntu sync deferred\n");
         }
     }
@@ -98,6 +131,9 @@ int main(void)
     printf("Relay Server waiting on port %d...\n", PORT);
     if (sync_unsent_sensors(database, ubuntu_ip, UBUNTU_PORT) < 0) {
         fprintf(stderr, "Startup sync deferred\n");
+    }
+    if (sync_unsent_vision(database, ubuntu_ip, UBUNTU_PORT) < 0) {
+        fprintf(stderr, "Startup vision sync deferred\n");
     }
 
     while (1) {

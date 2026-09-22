@@ -86,6 +86,22 @@ done:
     return result;
 }
 
+static int valid_vision_class(int class_id, const char *class_name)
+{
+    return (class_id == 2 && strcmp(class_name, "car") == 0) ||
+           (class_id == 3 && strcmp(class_name, "motorcycle") == 0) ||
+           (class_id == 5 && strcmp(class_name, "bus") == 0) ||
+           (class_id == 7 && strcmp(class_name, "truck") == 0);
+}
+
+static int is_json_integer(cJSON *item)
+{
+    return cJSON_IsNumber(item) &&
+           item->valuedouble >= 0.0 &&
+           item->valuedouble <= 9007199254740991.0 &&
+           item->valuedouble == (double)(uint64_t)item->valuedouble;
+}
+
 int parse_vision_json(const char *json, VisionMessage *message)
 {
     cJSON *root;
@@ -122,6 +138,8 @@ int parse_vision_json(const char *json, VisionMessage *message)
                          sizeof(message->device_id)) != 0 ||
         copy_json_string(root, "message_id", message->message_id,
                          sizeof(message->message_id)) != 0 ||
+        copy_json_string(root, "timestamp", message->timestamp,
+                         sizeof(message->timestamp)) != 0 ||
         copy_json_string(data, "class_name", message->class_name,
                          sizeof(message->class_name)) != 0) {
         goto done;
@@ -136,15 +154,18 @@ int parse_vision_json(const char *json, VisionMessage *message)
     width = cJSON_GetObjectItemCaseSensitive(bbox, "width");
     height = cJSON_GetObjectItemCaseSensitive(bbox, "height");
 
-    if (!cJSON_IsNumber(frame_id) || frame_id->valuedouble < 0 ||
-        !cJSON_IsNumber(timestamp_ms) || timestamp_ms->valuedouble < 0 ||
-        !cJSON_IsNumber(class_id) ||
+    if (!is_json_integer(frame_id) ||
+        !is_json_integer(timestamp_ms) || timestamp_ms->valuedouble <= 0 ||
+        !is_json_integer(class_id) ||
+        !valid_vision_class(class_id->valueint, message->class_name) ||
         !cJSON_IsNumber(confidence) || confidence->valuedouble < 0.0 ||
         confidence->valuedouble > 1.0 ||
-        !cJSON_IsNumber(x) || x->valueint < 0 ||
-        !cJSON_IsNumber(y) || y->valueint < 0 ||
-        !cJSON_IsNumber(width) || width->valueint <= 0 ||
-        !cJSON_IsNumber(height) || height->valueint <= 0) {
+        !is_json_integer(x) ||
+        !is_json_integer(y) ||
+        !is_json_integer(width) || width->valueint <= 0 ||
+        !is_json_integer(height) || height->valueint <= 0 ||
+        x->valueint > 640 - width->valueint ||
+        y->valueint > 480 - height->valueint) {
         goto done;
     }
 

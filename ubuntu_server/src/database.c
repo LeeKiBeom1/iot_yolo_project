@@ -282,11 +282,13 @@ int database_save_vision(MYSQL *database, const VisionMessage *message)
         "INSERT INTO vision_data "
         "(device_id, message_id, timestamp, frame_id, timestamp_ms, "
         "class_id, class_name, confidence, x, y, width, height) "
-        "VALUES (?, ?, FROM_UNIXTIME(? / 1000.0), ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        "VALUES (?, ?, STR_TO_DATE(?, '%Y-%m-%dT%H:%i:%s'), "
+        "?, ?, ?, ?, ?, ?, ?, ?, ?)";
     MYSQL_STMT *statement;
     MYSQL_BIND bind[12];
     unsigned long device_id_length;
     unsigned long message_id_length;
+    unsigned long timestamp_length;
     unsigned long class_name_length;
     unsigned long long frame_id;
     long long timestamp_ms;
@@ -307,6 +309,7 @@ int database_save_vision(MYSQL *database, const VisionMessage *message)
     memset(bind, 0, sizeof(bind));
     device_id_length = (unsigned long)strlen(message->device_id);
     message_id_length = (unsigned long)strlen(message->message_id);
+    timestamp_length = (unsigned long)strlen(message->timestamp);
     class_name_length = (unsigned long)strlen(message->class_name);
     frame_id = message->frame_id;
     timestamp_ms = message->timestamp_ms;
@@ -322,7 +325,7 @@ int database_save_vision(MYSQL *database, const VisionMessage *message)
 
     BIND_STRING(0, message->device_id, device_id_length);
     BIND_STRING(1, message->message_id, message_id_length);
-    BIND_VALUE(2, MYSQL_TYPE_LONGLONG, timestamp_ms);
+    BIND_STRING(2, message->timestamp, timestamp_length);
     BIND_VALUE(3, MYSQL_TYPE_LONGLONG, frame_id);
     bind[3].is_unsigned = 1;
     BIND_VALUE(4, MYSQL_TYPE_LONGLONG, timestamp_ms);

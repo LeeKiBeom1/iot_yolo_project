@@ -22,6 +22,10 @@ Ubuntu 연결에 실패하면 `UNSENT` 상태를 유지하고 다음 센서 메�
 
 동일한 `message_id`와 동일한 내용은 새 행으로 저장하지 않고 `duplicate: true` ACK를 반환합니다. 동일한 `message_id`로 다른 센서값이 들어오면 `MESSAGE_ID_CONFLICT` 오류 ACK를 반환합니다.
 
+Vision 메시지도 객체 한 건당 `vision_data` 한 행으로 저장합니다. `version`, 메시지 타입, 허용 차량 클래스, 신뢰도 범위, `640 × 480` Bounding Box 범위와 `timestamp_ms`를 검증합니다. Relay SQLite 저장 또는 정상 중복 확인 직후 Vision Client에 ACK를 보내고, Ubuntu 동기화는 그 이후 수행합니다.
+
+현재 Vision Client는 1.5초 ACK timeout과 최대 2회 재시도를 사용합니다. 세 번 모두 실패하면 미전송 Detection을 영구 보관하지 않고 프로그램을 종료하는 것이 현재 MVP의 제한사항입니다.
+
 ## Database schema
 
 SQLite 테이블 정의는 `db/schema.sql`에서 관리합니다.
