@@ -15,7 +15,7 @@ Relay Raspberry Pi
         │
         │ SQLite 저장
         ▼
-   30초 단위 전송
+   저장 직후 즉시 전송
         │
         │ TCP
         ▼
@@ -304,11 +304,11 @@ SQLite는 최종 저장소가 아니라 **네트워크 장애 시 데이터 유�
 
 ---
 
-## 9. Ubuntu VM 전송 주기
+## 9. Ubuntu VM 전송 방식
 
-Relay Raspberry Pi는 SQLite에 저장된 데이터를 **30초 단위로 전송**한다.
+Relay Raspberry Pi는 데이터를 SQLite에 저장한 직후 Ubuntu VM으로 전송한다.
 
-30초마다 SQLite에서 다음 조건의 데이터를 조회한다.
+전송할 때는 SQLite에서 다음 조건의 데이터를 오래된 순서대로 조회한다.
 
 ```text
 sync_status = UNSENT
@@ -326,8 +326,6 @@ Timestamp 생성
 SQLite 저장
     ↓
 sync_status = UNSENT
-    ↓
-30초 대기
     ↓
 UNSENT 데이터 조회
     ↓
@@ -388,7 +386,7 @@ ACK 미수신 또는 오류 ACK
     ↓
 UNSENT 상태 유지
     ↓
-다음 전송 주기에 재전송
+다음 데이터 수신 또는 Relay 서버 재시작 시 재전송
 ```
 
 따라서 각 ACK의 의미는 다음과 같다.
@@ -444,9 +442,9 @@ UNSENT 상태 유지
     ↓
 UNSENT 상태 유지
     ↓
-다음 30초 전송 주기
+다음 데이터 수신 또는 Relay 서버 재시작
     ↓
-재전송
+UNSENT 데이터 재전송
 ```
 
 이를 통해 일시적인 네트워크 장애가 발생하더라도 데이터가 유실되지 않도록 한다.
@@ -487,7 +485,7 @@ TCP 연결이 끊긴 경우 **5초 간격으로 재접속을 시도**한다.
                - SQLite 저장
                - sync_status = UNSENT
                           │
-                          │ 30초마다 UNSENT 데이터 조회
+                          │ 저장 직후 UNSENT 데이터 전송
                           ▼
                [Ubuntu VM Server :5001]
                           │
@@ -530,8 +528,8 @@ Relay Pi ─────────────▶ Ubuntu VM
 * Timestamp는 Relay Raspberry Pi에서 데이터 수신 시 생성
 * 모든 데이터는 SQLite에 우선 저장
 * 초기 동기화 상태는 `UNSENT`
-* `30초`마다 `UNSENT` 데이터 전송
+* SQLite 저장 직후 `UNSENT` 데이터 즉시 전송
 * MariaDB 저장 성공 시 Ubuntu VM이 해당 `message_id`의 JSON ACK 반환
 * 성공 ACK 수신 후 해당 데이터의 상태를 `SENT`로 변경
-* 전송 실패 시 `UNSENT` 상태를 유지하고 다음 전송 주기에 재전송
+* 전송 실패 시 `UNSENT` 상태를 유지하고 다음 데이터 수신 또는 Relay 서버 재시작 시 재전송
 * TCP 연결 실패 시 `5초` 간격으로 재접속

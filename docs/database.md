@@ -231,7 +231,7 @@ SQLite는 최종 저장소가 아니라 로컬 버퍼 및 임시 저장소로 �
 
 ## 8. MariaDB 저장 정책
 
-Relay Raspberry Pi는 30초마다 SQLite에서 다음 데이터를 조회한다.
+Relay Raspberry Pi는 SQLite 저장 직후 다음 데이터를 오래된 순서대로 조회한다.
 
 ```text
 sync_status = UNSENT
@@ -335,7 +335,7 @@ MariaDB에 저장된 데이터는 이후 다양한 조건으로 조회한다.
                  │
         sync_status = UNSENT
                  │
-                 │ 30초 단위 전송
+                 │ 저장 직후 즉시 전송
                  ▼
           Ubuntu VM Server
                  │
@@ -360,7 +360,7 @@ MariaDB에 저장된 데이터는 이후 다양한 조건으로 조회한다.
 * SQLite는 로컬 버퍼 및 임시 저장소 역할
 * SQLite에서 `UNSENT / SENT` 상태 관리
 * MariaDB는 최종 저장 및 장기 보관
-* `30초`마다 `UNSENT` 데이터 전송
+* SQLite 저장 직후 `UNSENT` 데이터 즉시 전송
 * MariaDB 저장 성공 ACK 수신 후 `SENT` 변경
 * `timestamp`를 이용하여 센서 데이터와 비전 데이터를 함께 조회 가능
 * 실제 데이터 축적 후 시간별·센서별·객체별 분석 및 시각화 수행

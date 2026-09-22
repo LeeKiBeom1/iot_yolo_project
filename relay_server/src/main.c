@@ -92,6 +92,10 @@ int main(void)
     }
 
     printf("Relay Server waiting on port %d...\n", PORT);
+    if (sync_unsent_sensors(database, ubuntu_ip, UBUNTU_PORT) < 0) {
+        fprintf(stderr, "Startup sync deferred\n");
+    }
+
     while (1) {
         client_socket = accept(server_socket, NULL, NULL);
         if (client_socket < 0) {
