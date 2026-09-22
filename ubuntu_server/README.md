@@ -20,3 +20,9 @@ mariadb -u <DB_USER> -p road_monitor < db/schema.sql
 mariadb-dump -u <DB_USER> -p road_monitor > road_monitor_before_001.sql
 mariadb -u <DB_USER> -p road_monitor < db/migrations/001_add_message_identity.sql
 ```
+
+Vision 탐지 상세 컬럼을 추가할 때는 다음 마이그레이션을 순서대로 적용합니다.
+
+```bash
+mariadb -u <DB_USER> -p road_monitor < db/migrations/002_expand_vision_detection.sql
+```

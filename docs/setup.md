@@ -213,6 +213,8 @@ vision_data
 ```sql
 CREATE TABLE sensor_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    message_id TEXT NOT NULL UNIQUE,
     timestamp TEXT NOT NULL,
     light INTEGER,
     temperature REAL,
@@ -236,9 +238,18 @@ ON sensor_data(timestamp);
 ```sql
 CREATE TABLE vision_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    message_id TEXT NOT NULL UNIQUE,
     timestamp TEXT NOT NULL,
-    object TEXT,
-    confidence REAL,
+    frame_id INTEGER NOT NULL,
+    timestamp_ms INTEGER NOT NULL,
+    class_id INTEGER NOT NULL,
+    class_name TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
     sync_status TEXT NOT NULL DEFAULT 'UNSENT'
 );
 ```
@@ -248,6 +259,13 @@ Timestamp Index:
 ```sql
 CREATE INDEX idx_vision_timestamp
 ON vision_data(timestamp);
+```
+
+Frame Timestamp Index:
+
+```sql
+CREATE INDEX idx_vision_timestamp_ms
+ON vision_data(timestamp_ms);
 ```
 
 ---
@@ -491,6 +509,8 @@ GRANT ALL PRIVILEGES ON road_monitor.* TO 'ubuntu'@'%';
 ```sql
 CREATE TABLE sensor_data (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    device_id VARCHAR(32) NOT NULL,
+    message_id VARCHAR(64) NOT NULL UNIQUE,
     timestamp DATETIME NOT NULL,
     light INT,
     temperature FLOAT,
@@ -513,9 +533,18 @@ ON sensor_data(timestamp);
 ```sql
 CREATE TABLE vision_data (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    device_id VARCHAR(32) NOT NULL,
+    message_id VARCHAR(64) NOT NULL UNIQUE,
     timestamp DATETIME NOT NULL,
-    object VARCHAR(50),
-    confidence FLOAT
+    frame_id BIGINT UNSIGNED NOT NULL,
+    timestamp_ms BIGINT NOT NULL,
+    class_id INT NOT NULL,
+    class_name VARCHAR(50) NOT NULL,
+    confidence FLOAT NOT NULL,
+    x INT NOT NULL,
+    y INT NOT NULL,
+    width INT NOT NULL,
+    height INT NOT NULL
 );
 ```
 
@@ -524,6 +553,13 @@ Timestamp Index:
 ```sql
 CREATE INDEX idx_vision_timestamp
 ON vision_data(timestamp);
+```
+
+Frame Timestamp Index:
+
+```sql
+CREATE INDEX idx_vision_timestamp_ms
+ON vision_data(timestamp_ms);
 ```
 
 ---

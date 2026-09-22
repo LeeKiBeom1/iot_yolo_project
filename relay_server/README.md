@@ -20,3 +20,9 @@ sqlite3 db/road_monitor.db < db/schema.sql
 cp db/road_monitor.db db/road_monitor.db.bak
 sqlite3 db/road_monitor.db < db/migrations/001_add_message_identity.sql
 ```
+
+Vision 탐지 상세 컬럼을 추가할 때는 다음 마이그레이션을 순서대로 적용합니다.
+
+```bash
+sqlite3 db/road_monitor.db < db/migrations/002_expand_vision_detection.sql
+```
