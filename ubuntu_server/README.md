@@ -4,6 +4,15 @@ Ubuntu VM에서 실행되는 중앙 서버 코드가 위치합니다.
 
 주요 역할은 Relay Server가 전달한 데이터를 수신하여 MariaDB에 저장하고, 조회 및 시각화에 필요한 데이터를 제공하는 것입니다.
 
+서버 실행 시 MariaDB 접속 정보는 환경변수로 전달합니다. 비밀번호는 소스 코드와 Git에 저장하지 않습니다.
+
+```bash
+DB_HOST=localhost DB_USER=ubuntu DB_PASSWORD=<DB_PASSWORD> \
+DB_NAME=road_monitor ./ubuntu_server
+```
+
+Vision 메시지는 객체 한 건을 `vision_data` 한 행으로 저장합니다. 저장 성공 후 `status: "ok"` ACK를 반환하며, 이미 저장된 `message_id`가 다시 수신되면 새 행을 만들지 않고 `duplicate: true`를 포함한 성공 ACK를 반환합니다. DB 저장 실패 시에는 `status: "error"`, `error_code: "DATABASE_ERROR"` ACK를 반환합니다.
+
 ## Database schema
 
 MariaDB 테이블 정의는 `db/schema.sql`에서 관리합니다.

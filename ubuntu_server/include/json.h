@@ -1,8 +1,25 @@
 #ifndef MESSAGE_JSON_H
 #define MESSAGE_JSON_H
 
-int parse_message_id(const char *json, char *message_id, int message_id_size);
-int create_ack_json(const char *message_id, char *buffer, int buffer_size);
-int validate_ack_json(const char *json, const char *expected_message_id);
+#include <stdint.h>
+
+typedef struct {
+    char device_id[33];
+    char message_id[65];
+    uint64_t frame_id;
+    int64_t timestamp_ms;
+    int class_id;
+    char class_name[51];
+    float confidence;
+    int x;
+    int y;
+    int width;
+    int height;
+} VisionMessage;
+
+int parse_vision_json(const char *json, VisionMessage *message);
+int create_ack_json(const char *message_id, const char *status,
+                    int duplicate, const char *error_code,
+                    char *buffer, int buffer_size);
 
 #endif
