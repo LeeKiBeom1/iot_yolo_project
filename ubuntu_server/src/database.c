@@ -39,6 +39,68 @@ void database_close(MYSQL *database)
     }
 }
 
+int database_save_sensor(MYSQL *database, const SensorMessage *message)
+{
+    static const char sql[] =
+        "INSERT INTO sensor_data "
+        "(device_id, message_id, timestamp, light, temperature, humidity, sound) "
+        "VALUES (?, ?, STR_TO_DATE(?, '%Y-%m-%dT%H:%i:%s'), ?, ?, ?, ?)";
+    MYSQL_STMT *statement;
+    MYSQL_BIND bind[7];
+    unsigned long device_id_length;
+    unsigned long message_id_length;
+    unsigned long timestamp_length;
+    int result = DB_SAVE_ERROR;
+
+    if (database == NULL || message == NULL) return DB_SAVE_ERROR;
+
+    statement = mysql_stmt_init(database);
+    if (statement == NULL ||
+        mysql_stmt_prepare(statement, sql, (unsigned long)strlen(sql)) != 0) {
+        fprintf(stderr, "MariaDB prepare failed: %s\n", mysql_error(database));
+        if (statement != NULL) mysql_stmt_close(statement);
+        return DB_SAVE_ERROR;
+    }
+
+    memset(bind, 0, sizeof(bind));
+    device_id_length = (unsigned long)strlen(message->device_id);
+    message_id_length = (unsigned long)strlen(message->message_id);
+    timestamp_length = (unsigned long)strlen(message->timestamp);
+
+#define BIND_STRING(index, value, length_value) \
+    bind[index].buffer_type = MYSQL_TYPE_STRING; \
+    bind[index].buffer = (void *)(value); \
+    bind[index].buffer_length = (length_value); \
+    bind[index].length = &(length_value)
+#define BIND_VALUE(index, type, value) \
+    bind[index].buffer_type = (type); \
+    bind[index].buffer = (void *)&(value)
+
+    BIND_STRING(0, message->device_id, device_id_length);
+    BIND_STRING(1, message->message_id, message_id_length);
+    BIND_STRING(2, message->timestamp, timestamp_length);
+    BIND_VALUE(3, MYSQL_TYPE_LONG, message->light);
+    BIND_VALUE(4, MYSQL_TYPE_FLOAT, message->temperature);
+    BIND_VALUE(5, MYSQL_TYPE_FLOAT, message->humidity);
+    BIND_VALUE(6, MYSQL_TYPE_LONG, message->sound);
+
+#undef BIND_STRING
+#undef BIND_VALUE
+
+    if (mysql_stmt_bind_param(statement, bind) != 0) {
+        fprintf(stderr, "MariaDB bind failed: %s\n", mysql_stmt_error(statement));
+    } else if (mysql_stmt_execute(statement) == 0) {
+        result = DB_SAVE_OK;
+    } else if (mysql_stmt_errno(statement) == 1062) {
+        result = DB_SAVE_DUPLICATE;
+    } else {
+        fprintf(stderr, "MariaDB insert failed: %s\n", mysql_stmt_error(statement));
+    }
+
+    mysql_stmt_close(statement);
+    return result;
+}
+
 int database_save_vision(MYSQL *database, const VisionMessage *message)
 {
     static const char sql[] =

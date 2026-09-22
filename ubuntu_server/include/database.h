@@ -11,6 +11,7 @@
 
 MYSQL *database_connect(void);
 void database_close(MYSQL *database);
+int database_save_sensor(MYSQL *database, const SensorMessage *message);
 int database_save_vision(MYSQL *database, const VisionMessage *message);
 
 #endif

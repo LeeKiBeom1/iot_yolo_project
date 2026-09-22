@@ -12,7 +12,8 @@ static int send_all(int socket_fd, const void *buffer, int length)
     int sent = 0;
 
     while (sent < length) {
-        ssize_t result = send(socket_fd, data + sent, length - sent, 0);
+        ssize_t result = send(socket_fd, data + sent, length - sent,
+                              MSG_NOSIGNAL);
 
         if (result < 0) {
             if (errno == EINTR) {

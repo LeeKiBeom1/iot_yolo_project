@@ -4,6 +4,24 @@ Raspberry Pi 4에서 실행되는 중계 서버 코드가 위치합니다.
 
 주요 역할은 센서 및 객체 탐지 데이터를 수신하고, 로컬에 임시 저장한 뒤 Ubuntu 서버로 전달하는 것입니다.
 
+## 현재 센서 처리 흐름
+
+현재 최소 구현은 TCP 포트 `5000`에서 Arduino 센서 JSON을 순차적으로 수신합니다.
+
+```text
+센서 JSON 수신
+→ Relay 수신 시각 생성
+→ SQLite에 UNSENT로 저장
+→ 저장 성공 ACK
+→ Ubuntu 서버로 미전송 센서 데이터 전송
+→ Ubuntu 성공 ACK 수신
+→ SQLite 상태를 SENT로 변경
+```
+
+Ubuntu 연결에 실패하면 `UNSENT` 상태를 유지하고 다음 센서 메시지를 수신했을 때 다시 전송합니다. 현재는 수신 직후 동기화를 시도하며, 문서에 정의된 30초 주기 타이머와 다중 클라이언트 처리는 이후 `epoll` 이벤트 루프에서 구현합니다.
+
+동일한 `message_id`는 새 행으로 저장하지 않고 `duplicate: true` ACK를 반환합니다. 동일 ID에 서로 다른 내용이 들어오는 `MESSAGE_ID_CONFLICT` 판정은 `epoll` 전환 전 신뢰성 처리 단계에서 추가합니다.
+
 ## Database schema
 
 SQLite 테이블 정의는 `db/schema.sql`에서 관리합니다.

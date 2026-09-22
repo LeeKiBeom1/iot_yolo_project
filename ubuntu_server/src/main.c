@@ -15,6 +15,8 @@ static void handle_client(int clnt_sock, MYSQL *database)
 {
     char buf[MAX_MESSAGE_SIZE + 1];
     char ack[MAX_MESSAGE_SIZE + 1];
+    char type[16];
+    SensorMessage sensor_message;
     VisionMessage message;
     int receive_result;
     int save_result;
@@ -31,13 +33,31 @@ static void handle_client(int clnt_sock, MYSQL *database)
 
         printf("Received: %s\n", buf);
 
-        if (parse_vision_json(buf, &message) < 0) {
+        if (parse_message_type(buf, type, sizeof(type)) < 0) {
             fprintf(stderr, "Invalid JSON message\n");
             break;
         }
 
-        save_result = database_save_vision(database, &message);
-        if (create_ack_json(message.message_id,
+        if (strcmp(type, "sensor") == 0) {
+            if (parse_sensor_json(buf, &sensor_message) < 0) {
+                fprintf(stderr, "Invalid sensor message\n");
+                break;
+            }
+            save_result = database_save_sensor(database, &sensor_message);
+        } else if (strcmp(type, "vision") == 0) {
+            if (parse_vision_json(buf, &message) < 0) {
+                fprintf(stderr, "Invalid vision message\n");
+                break;
+            }
+            save_result = database_save_vision(database, &message);
+        } else {
+            fprintf(stderr, "Unsupported message type\n");
+            break;
+        }
+
+        if (create_ack_json(strcmp(type, "sensor") == 0
+                                ? sensor_message.message_id
+                                : message.message_id,
                             save_result == DB_SAVE_ERROR ? "error" : "ok",
                             save_result == DB_SAVE_DUPLICATE,
                             save_result == DB_SAVE_ERROR
