@@ -4,37 +4,67 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
+#include "server.h"
+
 #define PORT 5001
-#define BUF_SIZE 256
 
 int main(void)
 {
     int serv_sock, clnt_sock;
     struct sockaddr_in serv_addr;
-    char buf[BUF_SIZE] = {0};
+    char buf[MAX_MESSAGE_SIZE + 1];
+    const char *ack =
+        "{\"version\":1,\"type\":\"ack\","
+        "\"message_id\":\"relay-test-000001-00000001\","
+        "\"status\":\"ok\"}";
 
     serv_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (serv_sock < 0) {
+        perror("socket");
+        return 1;
+    }
 
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(PORT);
 
-    bind(serv_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
-    listen(serv_sock, 5);
+    if (bind(serv_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("bind");
+        close(serv_sock);
+        return 1;
+    }
+
+    if (listen(serv_sock, 5) < 0) {
+        perror("listen");
+        close(serv_sock);
+        return 1;
+    }
 
     printf("Ubuntu Server waiting on port %d...\n", PORT);
 
     clnt_sock = accept(serv_sock, NULL, NULL);
+    if (clnt_sock < 0) {
+        perror("accept");
+        close(serv_sock);
+        return 1;
+    }
 
-    read(clnt_sock, buf, sizeof(buf) - 1);
+    if (recv_frame(clnt_sock, buf, sizeof(buf)) <= 0) {
+        fprintf(stderr, "Failed to receive frame\n");
+        close(clnt_sock);
+        close(serv_sock);
+        return 1;
+    }
+
     printf("Received: %s\n", buf);
 
-    write(clnt_sock, "OK", 2);
+    if (send_frame(clnt_sock, ack) < 0) {
+        fprintf(stderr, "Failed to send ACK frame\n");
+    }
 
     close(clnt_sock);
     close(serv_sock);
 
     return 0;
 }
-
