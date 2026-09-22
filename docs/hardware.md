@@ -33,6 +33,14 @@
 * Pleomax W210 USB Webcam
 * Wi-Fi Network
 
+카메라 입력 해상도:
+
+```text
+640 × 480 pixels
+```
+
+객체 탐지 Bounding Box는 이 원본 프레임의 좌측 상단을 `(0, 0)`으로 하는 pixel 좌표를 사용한다.
+
 ---
 
 ### Raspberry Pi 4 #2 — Relay Server

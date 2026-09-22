@@ -204,9 +204,7 @@ Relay Raspberry Pi가 데이터를 수신한 시점에 Timestamp를 추가한다
 
 ## 6. Vision 데이터 형식
 
-Vision 데이터는 객체가 탐지될 때마다 Relay Raspberry Pi로 전송한다.
-
-현재 Vision 데이터의 상세 구조는 확정되지 않았으며, 아래 형식은 예시로 사용한다.
+Vision 데이터는 탐지된 객체 한 개마다 JSON 메시지 한 건으로 Relay Raspberry Pi에 전송한다. 같은 프레임에서 여러 객체가 탐지되면 `frame_id`와 `timestamp_ms`는 같고 `message_id`는 서로 다른 메시지를 생성한다. 탐지 객체가 없는 프레임은 전송하지 않으므로 `frame_id`가 연속적이지 않아도 정상이다.
 
 ```json
 {
@@ -215,13 +213,43 @@ Vision 데이터는 객체가 탐지될 때마다 Relay Raspberry Pi로 전송�
   "device_id": "vision-pi-01",
   "message_id": "vision-pi-01-000015-00000427",
   "data": {
-    "object": "car",
-    "confidence": 0.91
+    "frame_id": 62,
+    "timestamp_ms": 1789977054740,
+    "class_id": 2,
+    "class_name": "car",
+    "confidence": 0.88,
+    "bbox": {
+      "x": 100,
+      "y": 120,
+      "width": 80,
+      "height": 50
+    }
   }
 }
 ```
 
-Relay Raspberry Pi 수신 후:
+Vision `message_id`는 `<device_id>-<boot_id>-<sequence>` 형식을 사용한다.
+
+* `device_id`는 장치별 고정값이다.
+* `boot_id`는 프로그램 시작 시 로컬 영구 저장값을 1 증가시킨 값이다.
+* `sequence`는 새 객체 메시지를 만들 때마다 1 증가한다.
+* 재전송할 때는 최초 JSON과 `message_id`를 그대로 사용한다.
+* `frame_id`는 메시지 ID 생성에 사용하지 않고 원본 영상 프레임을 식별하는 데이터로만 사용한다.
+
+`timestamp_ms`는 YOLO 추론 완료 시간이 아니라 카메라에서 원본 프레임을 획득한 시각이다. Unix timestamp millisecond 정수로 전송하고 저장한다.
+
+Bounding Box는 `640 × 480` 원본 프레임의 pixel 좌표를 사용한다. `x`, `y`는 좌측 상단이고 `width`, `height`는 너비와 높이이다.
+
+전송 대상 클래스는 다음과 같다.
+
+| class_id | class_name |
+| -------: | ---------- |
+| 2        | car        |
+| 3        | motorcycle |
+| 5        | bus        |
+| 7        | truck      |
+
+Relay Raspberry Pi는 수신 시각을 별도로 추가하여 SQLite에 저장하고 Ubuntu VM에 전달한다.
 
 ```json
 {
@@ -231,27 +259,34 @@ Relay Raspberry Pi 수신 후:
   "message_id": "vision-pi-01-000015-00000427",
   "timestamp": "2026-09-21T15:00:03",
   "data": {
-    "object": "car",
-    "confidence": 0.91
+    "frame_id": 62,
+    "timestamp_ms": 1789977054740,
+    "class_id": 2,
+    "class_name": "car",
+    "confidence": 0.88,
+    "bbox": {
+      "x": 100,
+      "y": 120,
+      "width": 80,
+      "height": 50
+    }
   }
 }
 ```
-
-Vision 데이터의 상세 필드는 Edge Vision 구현 결과에 따라 추후 수정한다.
 
 ---
 
 ## 7. Timestamp 처리
 
-Timestamp는 **Relay Raspberry Pi에서 생성한다.**
+센서 데이터의 Timestamp와 모든 데이터의 수신 시각은 **Relay Raspberry Pi에서 생성한다.** Vision 데이터의 `timestamp_ms`는 Edge Vision Pi가 프레임 획득 직후 생성하며, Relay 수신 시각과 별도로 보관한다.
 
-Edge Vision Raspberry Pi와 Arduino UNO에서는 데이터 생성과 전송 기능에 집중하고, 시간 기록과 데이터 관리 기능은 Relay Raspberry Pi에서 처리한다.
+Arduino UNO는 Timestamp를 생성하지 않고 Relay가 센서 데이터 수신 시각을 기록한다. Edge Vision Pi는 프레임 획득 시각만 `timestamp_ms`로 생성하며, Relay는 Vision 데이터의 수신 시각을 별도로 기록한다.
 
 목적:
 
-* Edge Vision Raspberry Pi의 부가 연산 최소화
 * 데이터 시간 기록 방식 통일
 * 센서 데이터와 객체 탐지 데이터를 동일한 시간 기준으로 관리
+* Vision 프레임 획득 시각과 네트워크 수신 시각을 구분
 
 ---
 
@@ -379,6 +414,20 @@ UNSENT 상태 유지
 ```
 
 같은 `message_id`에 다른 내용이 들어오면 `MESSAGE_ID_CONFLICT` 오류로 처리한다.
+
+처리에 실패하면 다음 형식의 오류 ACK를 반환한다.
+
+```json
+{
+  "version": 1,
+  "type": "ack",
+  "message_id": "vision-pi-01-000015-00000427",
+  "status": "error",
+  "error_code": "DATABASE_ERROR"
+}
+```
+
+클라이언트는 ACK의 `message_id`가 전송한 메시지와 같은지 확인한다. `status`가 `ok`이면 완료 처리하고, 제한 시간 안에 ACK를 받지 못하면 같은 JSON과 같은 `message_id`로 재전송한다.
 
 이를 통해 각 통신 구간에서 데이터가 실제 저장소에 정상적으로 기록되었는지 확인한다.
 

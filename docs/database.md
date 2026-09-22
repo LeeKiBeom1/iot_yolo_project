@@ -111,7 +111,7 @@ MariaDB에서는 `sync_status` 컬럼을 사용하지 않아도 된다.
 
 객체 탐지 결과 저장용 테이블이다.
 
-현재 비전 데이터의 상세 구조는 아직 확정되지 않았기 때문에 최소 구조만 정의한다.
+객체 한 개를 행 한 개로 저장한다. 동일한 영상 프레임에서 여러 객체가 탐지되면 `frame_id`와 `timestamp_ms`는 같고 `message_id`는 서로 다른 행으로 저장한다.
 
 ### 기본 구조
 
@@ -121,21 +121,37 @@ MariaDB에서는 `sync_status` 컬럼을 사용하지 않아도 된다.
 | device_id   | TEXT     | 송신 장치 식별자                |
 | message_id  | TEXT     | 재전송 중복 방지용 고유 메시지 ID     |
 | timestamp   | DATETIME | Relay Raspberry Pi 수신 시간 |
-| object      | TEXT     | 탐지 객체 종류                 |
+| frame_id    | INTEGER  | 원본 영상 프레임 번호             |
+| timestamp_ms | INTEGER | 원본 프레임 획득 Unix 시각(ms)    |
+| class_id    | INTEGER  | YOLO 객체 클래스 번호            |
+| class_name  | TEXT     | 객체 클래스 이름                 |
 | confidence  | REAL     | 객체 탐지 신뢰도                |
+| x           | INTEGER  | Bounding Box 좌측 상단 X 좌표    |
+| y           | INTEGER  | Bounding Box 좌측 상단 Y 좌표    |
+| width       | INTEGER  | Bounding Box 너비              |
+| height      | INTEGER  | Bounding Box 높이              |
 | sync_status | TEXT     | SQLite 동기화 상태            |
 
 예시:
 
 ```text
 id: 101
+device_id: vision-pi-01
+message_id: vision-pi-01-000015-00000427
 timestamp: 2026-09-21 15:00:03
-object: car
-confidence: 0.91
+frame_id: 62
+timestamp_ms: 1789977054740
+class_id: 2
+class_name: car
+confidence: 0.88
+x: 100
+y: 120
+width: 80
+height: 50
 sync_status: UNSENT
 ```
 
-비전 데이터의 상세 필드는 Edge Vision 구현 결과가 확정되면 추가한다.
+`timestamp_ms`는 프레임 획득 시각이고 `timestamp`는 Relay 수신 시각이다. Bounding Box 좌표는 `640 × 480` 원본 프레임을 기준으로 한다.
 
 ### Timestamp Index
 
@@ -253,8 +269,10 @@ sound = 430
 ```text
 vision_data
 15:00:04
-object = car
-confidence = 0.91
+frame_id = 62
+timestamp_ms = 1789977054740
+class_name = car
+confidence = 0.88
 ```
 
 나중에 같은 시간대 또는 가까운 시간 범위를 기준으로 데이터를 함께 분석할 수 있다.
