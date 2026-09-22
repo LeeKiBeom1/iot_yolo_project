@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -10,15 +11,55 @@
 
 #define PORT 5001
 
-int main(void)
+static void handle_client(int clnt_sock, MYSQL *database)
 {
-    int serv_sock, clnt_sock;
-    struct sockaddr_in serv_addr;
     char buf[MAX_MESSAGE_SIZE + 1];
     char ack[MAX_MESSAGE_SIZE + 1];
     VisionMessage message;
-    MYSQL *database;
+    int receive_result;
     int save_result;
+
+    while (1) {
+        receive_result = recv_frame(clnt_sock, buf, sizeof(buf));
+        if (receive_result == 0) {
+            break;
+        }
+        if (receive_result < 0) {
+            fprintf(stderr, "Failed to receive frame\n");
+            break;
+        }
+
+        printf("Received: %s\n", buf);
+
+        if (parse_vision_json(buf, &message) < 0) {
+            fprintf(stderr, "Invalid JSON message\n");
+            break;
+        }
+
+        save_result = database_save_vision(database, &message);
+        if (create_ack_json(message.message_id,
+                            save_result == DB_SAVE_ERROR ? "error" : "ok",
+                            save_result == DB_SAVE_DUPLICATE,
+                            save_result == DB_SAVE_ERROR
+                                ? "DATABASE_ERROR" : NULL,
+                            ack, sizeof(ack)) < 0) {
+            fprintf(stderr, "Failed to create ACK JSON\n");
+            break;
+        }
+
+        if (send_frame(clnt_sock, ack) < 0) {
+            fprintf(stderr, "Failed to send ACK frame\n");
+            break;
+        }
+    }
+}
+
+int main(void)
+{
+    int serv_sock, clnt_sock;
+    int reuse_address = 1;
+    struct sockaddr_in serv_addr;
+    MYSQL *database;
 
     database = database_connect();
     if (database == NULL) {
@@ -28,6 +69,14 @@ int main(void)
     serv_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (serv_sock < 0) {
         perror("socket");
+        database_close(database);
+        return 1;
+    }
+
+    if (setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR,
+                   &reuse_address, sizeof(reuse_address)) < 0) {
+        perror("setsockopt");
+        close(serv_sock);
         database_close(database);
         return 1;
     }
@@ -53,52 +102,22 @@ int main(void)
 
     printf("Ubuntu Server waiting on port %d...\n", PORT);
 
-    clnt_sock = accept(serv_sock, NULL, NULL);
-    if (clnt_sock < 0) {
-        perror("accept");
-        close(serv_sock);
-        database_close(database);
-        return 1;
-    }
+    while (1) {
+        clnt_sock = accept(serv_sock, NULL, NULL);
+        if (clnt_sock < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            perror("accept");
+            break;
+        }
 
-    if (recv_frame(clnt_sock, buf, sizeof(buf)) <= 0) {
-        fprintf(stderr, "Failed to receive frame\n");
+        handle_client(clnt_sock, database);
         close(clnt_sock);
-        close(serv_sock);
-        database_close(database);
-        return 1;
     }
 
-    printf("Received: %s\n", buf);
-
-    if (parse_vision_json(buf, &message) < 0) {
-        fprintf(stderr, "Invalid JSON message\n");
-        close(clnt_sock);
-        close(serv_sock);
-        database_close(database);
-        return 1;
-    }
-
-    save_result = database_save_vision(database, &message);
-    if (create_ack_json(message.message_id,
-                        save_result == DB_SAVE_ERROR ? "error" : "ok",
-                        save_result == DB_SAVE_DUPLICATE,
-                        save_result == DB_SAVE_ERROR ? "DATABASE_ERROR" : NULL,
-                        ack, sizeof(ack)) < 0) {
-        fprintf(stderr, "Failed to create ACK JSON\n");
-        close(clnt_sock);
-        close(serv_sock);
-        database_close(database);
-        return 1;
-    }
-
-    if (send_frame(clnt_sock, ack) < 0) {
-        fprintf(stderr, "Failed to send ACK frame\n");
-    }
-
-    close(clnt_sock);
     close(serv_sock);
     database_close(database);
 
-    return save_result == DB_SAVE_ERROR ? 1 : 0;
+    return 1;
 }
