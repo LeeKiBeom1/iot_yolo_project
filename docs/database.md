@@ -364,4 +364,24 @@ MariaDB에 저장된 데이터는 이후 다양한 조건으로 조회한다.
 * MariaDB 저장 성공 ACK 수신 후 `SENT` 변경
 * `timestamp`를 이용하여 센서 데이터와 비전 데이터를 함께 조회 가능
 * 실제 데이터 축적 후 시간별·센서별·객체별 분석 및 시각화 수행
+
+---
+
+## traffic_count
+
+Tracking으로 기준선을 통과한 차량 수를 5초 구간별로 저장한다. 기존 객체별 `vision_data`는 변경하지 않는다.
+
+| 컬럼 | 의미 |
+| --- | --- |
+| device_id | Vision 장치 ID |
+| message_id | 메시지 중복 방지용 고유 ID |
+| timestamp | Relay 수신 시각 |
+| period_start_ms | 집계 시작 시각(Unix ms) |
+| period_end_ms | 집계 종료 시각(Unix ms) |
+| car_count | 통과한 승용차 수 |
+| motorcycle_count | 통과한 오토바이 수 |
+| bus_count | 통과한 버스 수 |
+| truck_count | 통과한 트럭 수 |
+
+전체 통과 차량 수는 네 차종 Count의 합으로 조회하며 별도 컬럼으로 저장하지 않는다.
 * `sensor_data.timestamp`, `vision_data.timestamp`에 인덱스를 적용하여 시간 기준 조회 성능 향상

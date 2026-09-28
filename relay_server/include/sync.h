@@ -7,5 +7,7 @@ int sync_unsent_sensors(sqlite3 *database,
                         const char *server_ip, int server_port);
 int sync_unsent_vision(sqlite3 *database,
                        const char *server_ip, int server_port);
+int sync_unsent_traffic_counts(sqlite3 *database,
+                               const char *server_ip, int server_port);
 
 #endif

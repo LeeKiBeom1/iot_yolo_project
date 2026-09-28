@@ -559,3 +559,28 @@ MQTT는 현업 스마트팩토리, 스마트홈, IoT 플랫폼 구축에서 사�
   * 검증된 브로커(Mosquitto 등)를 활용해 통신 레이어의 안정성을 쉽게 확보하지만, 별도의 인프라 운영 및 보안(ACL) 지식이 요구됩니다.
 
   이번 프로젝트에서는 TCP소켓으로 진행한다.
+
+---
+
+## Traffic Count 메시지
+
+기존 `vision` 메시지는 그대로 유지하며, Tracking으로 기준선을 통과한 차량 수를 5초 구간별로 집계해 별도의 `traffic_count` 메시지로 전송한다.
+
+```json
+{
+  "version": 1,
+  "type": "traffic_count",
+  "device_id": "vision-pi-01",
+  "message_id": "vision-pi-01-000042-00000500",
+  "data": {
+    "period_start_ms": 1790046960000,
+    "period_end_ms": 1790046965000,
+    "car_count": 3,
+    "motorcycle_count": 0,
+    "bus_count": 1,
+    "truck_count": 0
+  }
+}
+```
+
+모든 Count는 0 이상의 정수이며 차량이 통과하지 않은 구간도 0으로 전송한다. 기존과 동일하게 4바이트 big-endian 길이 헤더, ACK, `message_id` 중복 방지 규칙을 적용한다.

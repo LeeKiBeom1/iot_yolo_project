@@ -24,6 +24,8 @@ Ubuntu 연결에 실패하면 `UNSENT` 상태를 유지하고 다음 메시지�
 
 Vision 메시지도 객체 한 건당 `vision_data` 한 행으로 저장합니다. `version`, 메시지 타입, 허용 차량 클래스, 신뢰도 범위, `640 × 480` Bounding Box 범위와 `timestamp_ms`를 검증합니다. Relay SQLite 저장 또는 정상 중복 확인 직후 Vision Client에 ACK를 보내고, Ubuntu 동기화는 그 이후 수행합니다.
 
+Tracking 기반 `traffic_count` 메시지는 5초 집계 구간별 차종 통과 대수를 `traffic_count` 테이블에 저장합니다. 기존 Sensor와 Vision 흐름은 그대로 유지합니다.
+
 현재 Vision Client는 1.5초 ACK timeout과 최대 2회 재시도를 사용합니다. 세 번 모두 실패하면 미전송 Detection을 영구 보관하지 않고 프로그램을 종료하는 것이 현재 MVP의 제한사항입니다.
 
 ## Database schema
@@ -47,4 +49,10 @@ Vision 탐지 상세 컬럼을 추가할 때는 다음 마이그레이션을 순
 
 ```bash
 sqlite3 db/road_monitor.db < db/migrations/002_expand_vision_detection.sql
+```
+
+Traffic Count 테이블 추가:
+
+```bash
+sqlite3 db/road_monitor.db < db/migrations/003_add_traffic_count.sql
 ```

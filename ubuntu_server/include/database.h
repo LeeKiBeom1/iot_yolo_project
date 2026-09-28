@@ -14,5 +14,7 @@ MYSQL *database_connect(void);
 void database_close(MYSQL *database);
 int database_save_sensor(MYSQL *database, const SensorMessage *message);
 int database_save_vision(MYSQL *database, const VisionMessage *message);
+int database_save_traffic_count(MYSQL *database,
+                                const TrafficCountMessage *message);
 
 #endif

@@ -18,6 +18,8 @@ static void handle_client(int clnt_sock, MYSQL *database)
     char type[16];
     SensorMessage sensor_message;
     VisionMessage message;
+    TrafficCountMessage traffic_count_message;
+    const char *message_id;
     int receive_result;
     int save_result;
 
@@ -44,20 +46,28 @@ static void handle_client(int clnt_sock, MYSQL *database)
                 break;
             }
             save_result = database_save_sensor(database, &sensor_message);
+            message_id = sensor_message.message_id;
         } else if (strcmp(type, "vision") == 0) {
             if (parse_vision_json(buf, &message) < 0) {
                 fprintf(stderr, "Invalid vision message\n");
                 break;
             }
             save_result = database_save_vision(database, &message);
+            message_id = message.message_id;
+        } else if (strcmp(type, "traffic_count") == 0) {
+            if (parse_traffic_count_json(buf, &traffic_count_message) < 0) {
+                fprintf(stderr, "Invalid traffic count message\n");
+                break;
+            }
+            save_result = database_save_traffic_count(
+                database, &traffic_count_message);
+            message_id = traffic_count_message.message_id;
         } else {
             fprintf(stderr, "Unsupported message type\n");
             break;
         }
 
-        if (create_ack_json(strcmp(type, "sensor") == 0
-                                ? sensor_message.message_id
-                                : message.message_id,
+        if (create_ack_json(message_id,
                             save_result == DB_SAVE_OK ||
                             save_result == DB_SAVE_DUPLICATE ? "ok" : "error",
                             save_result == DB_SAVE_DUPLICATE,
