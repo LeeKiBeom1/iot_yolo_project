@@ -1,5 +1,7 @@
 # Ubuntu Server
 
+ACK 없는 연속 Vision 수신은 새 전용 포트 **5003**에서 처리합니다. 기존 센서/ACK 포트 5001은 유지합니다. 빌드 시 상위 `common/` 폴더가 필요합니다. [설정·정책·검증 결과](../docs/vision_stream.md)를 참고하세요.
+
 Ubuntu VM에서 실행되는 중앙 서버 코드가 위치합니다.
 
 주요 역할은 Relay Server가 전달한 데이터를 수신하여 MariaDB에 저장하고, 조회 및 시각화에 필요한 데이터를 제공하는 것입니다.

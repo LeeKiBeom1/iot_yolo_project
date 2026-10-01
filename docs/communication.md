@@ -1,5 +1,7 @@
 # Communication Design
 
+> 2026-10-01 추가: Jetson의 ACK 없는 연속 Vision은 Pi **5002** → Ubuntu **5003** 전용 경로를 사용한다. 아래 5000/5001·Vision ACK 설명은 기존 프로토콜이다. 신규 경로의 Control·폐기 정책·촬영/수신 시각·실행 설정은 [Jetson 연속 Vision 연동](vision_stream.md)을 따른다. 센서는 기존 경로를 유지한다.
+
 ## 1. 통신 구조 개요
 
 본 프로젝트는 모든 장치 간 데이터 전송에 **TCP 통신**을 사용한다.

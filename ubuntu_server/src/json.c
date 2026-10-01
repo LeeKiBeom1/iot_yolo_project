@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 static int copy_json_string(cJSON *object, const char *name,
                             char *destination, int destination_size)
@@ -139,11 +140,22 @@ int parse_vision_json(const char *json, VisionMessage *message)
                          sizeof(message->device_id)) != 0 ||
         copy_json_string(root, "message_id", message->message_id,
                          sizeof(message->message_id)) != 0 ||
-        copy_json_string(root, "timestamp", message->timestamp,
-                         sizeof(message->timestamp)) != 0 ||
         copy_json_string(data, "class_name", message->class_name,
                          sizeof(message->class_name)) != 0) {
         goto done;
+    }
+
+    /* Direct Jetson payload has capture time only. Keep legacy relay time
+       when supplied; otherwise record final-server receive time separately. */
+    if (cJSON_GetObjectItemCaseSensitive(root, "timestamp") != NULL) {
+        if (copy_json_string(root, "timestamp", message->timestamp,
+                             sizeof(message->timestamp)) != 0) goto done;
+    } else {
+        time_t now = time(NULL);
+        struct tm local;
+        localtime_r(&now, &local);
+        strftime(message->timestamp, sizeof(message->timestamp),
+                 "%Y-%m-%dT%H:%M:%S", &local);
     }
 
     frame_id = cJSON_GetObjectItemCaseSensitive(data, "frame_id");

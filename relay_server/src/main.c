@@ -11,9 +11,12 @@
 #include "json.h"
 #include "server.h"
 #include "sync.h"
+#include "vision_stream.h"
+#include "vision_io.h"
 
 #define PORT 5000
-#define UBUNTU_PORT 5001
+static int upstream_port = 5001;
+#define UBUNTU_PORT upstream_port
 #define DATABASE_PATH "db/road_monitor.db"
 
 typedef struct {
@@ -84,7 +87,9 @@ static void handle_client(int client_socket, sqlite3 *database,
             break;
         }
 
-        if (create_ack_json(message_id,
+        /* Arduino is send-only; failure to deliver an unsolicited ACK must
+           not prevent its already-persisted sample from being synchronized. */
+        if (strcmp(type, "sensor") != 0 && (create_ack_json(message_id,
                             save_result == DB_SAVE_OK ||
                             save_result == DB_SAVE_DUPLICATE ? "ok" : "error",
                             save_result == DB_SAVE_DUPLICATE,
@@ -93,7 +98,7 @@ static void handle_client(int client_socket, sqlite3 *database,
                                 : save_result == DB_SAVE_ERROR
                                     ? "DATABASE_ERROR" : NULL,
                             ack, sizeof(ack)) < 0 ||
-            send_frame(client_socket, ack) < 0) {
+            send_frame(client_socket, ack) < 0)) {
             break;
         }
 
@@ -133,6 +138,7 @@ static void *client_thread(void *argument)
 
 int main(void)
 {
+    int port = vision_port("SENSOR_PORT", PORT);
     int server_socket;
     int client_socket;
     int reuse_address = 1;
@@ -141,6 +147,9 @@ int main(void)
     struct sockaddr_in server_address;
     sqlite3 *database;
     const char *ubuntu_ip = getenv("UBUNTU_SERVER_IP");
+
+    upstream_port = vision_port("SENSOR_FINAL_PORT", 5001);
+    if (port < 0 || upstream_port < 0) return 1;
 
     if (ubuntu_ip == NULL) ubuntu_ip = "10.10.16.51";
     database = database_open(DATABASE_PATH);
@@ -164,7 +173,7 @@ int main(void)
     memset(&server_address, 0, sizeof(server_address));
     server_address.sin_family = AF_INET;
     server_address.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_address.sin_port = htons(PORT);
+    server_address.sin_port = htons((uint16_t)port);
     if (bind(server_socket, (struct sockaddr *)&server_address,
              sizeof(server_address)) < 0 ||
         listen(server_socket, 5) < 0) {
@@ -174,13 +183,14 @@ int main(void)
         return 1;
     }
 
-    printf("Relay Server waiting on port %d...\n", PORT);
+    printf("Relay Server waiting on port %d...\n", port);
+    if (pthread_create(&thread, NULL, vision_service, NULL) != 0) return 1;
+    pthread_detach(thread);
     if (sync_unsent_sensors(database, ubuntu_ip, UBUNTU_PORT) < 0) {
         fprintf(stderr, "Startup sync deferred\n");
     }
-    if (sync_unsent_vision(database, ubuntu_ip, UBUNTU_PORT) < 0) {
-        fprintf(stderr, "Startup vision sync deferred\n");
-    }
+    /* Historical Vision UNSENT rows remain for manual disposition; the new
+       real-time channel must not replay them automatically at startup. */
     if (sync_unsent_traffic_counts(database, ubuntu_ip, UBUNTU_PORT) < 0) {
         fprintf(stderr, "Startup traffic count sync deferred\n");
     }

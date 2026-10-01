@@ -4,6 +4,10 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <pthread.h>
+#include <time.h>
+#include "vision_stream.h"
+#include "vision_io.h"
 
 #include "database.h"
 #include "json.h"
@@ -89,14 +93,21 @@ static void handle_client(int clnt_sock, MYSQL *database)
 
 int main(void)
 {
+    int port = vision_port("SENSOR_PORT", PORT);
+    pthread_t vision_thread;
     int serv_sock, clnt_sock;
     int reuse_address = 1;
     struct sockaddr_in serv_addr;
     MYSQL *database;
+    if (port < 0) return 1;
 
-    database = database_connect();
-    if (database == NULL) {
-        return 1;
+    if (mysql_library_init(0, NULL, NULL) != 0) return 1;
+    if (pthread_create(&vision_thread, NULL, vision_service, NULL) != 0) return 1;
+    pthread_detach(vision_thread);
+    /* The Vision endpoint must remain reachable and PAUSED during DB outages. */
+    while ((database = database_connect()) == NULL) {
+        struct timespec delay = {1, 0};
+        nanosleep(&delay, NULL);
     }
 
     serv_sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -117,7 +128,7 @@ int main(void)
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serv_addr.sin_port = htons(PORT);
+    serv_addr.sin_port = htons((uint16_t)port);
 
     if (bind(serv_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         perror("bind");
@@ -133,7 +144,7 @@ int main(void)
         return 1;
     }
 
-    printf("Ubuntu Server waiting on port %d...\n", PORT);
+    printf("Ubuntu Server waiting on port %d...\n", port);
 
     while (1) {
         clnt_sock = accept(serv_sock, NULL, NULL);

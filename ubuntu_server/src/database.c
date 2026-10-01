@@ -11,10 +11,14 @@ MYSQL *database_connect(void)
     const char *password = getenv("DB_PASSWORD");
     const char *name = getenv("DB_NAME");
     MYSQL *database = mysql_init(NULL);
+    unsigned int timeout = 3;
 
     if (database == NULL) {
         return NULL;
     }
+    mysql_options(database, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
+    mysql_options(database, MYSQL_OPT_READ_TIMEOUT, &timeout);
+    mysql_options(database, MYSQL_OPT_WRITE_TIMEOUT, &timeout);
 
     if (host == NULL) host = "localhost";
     if (user == NULL) user = "ubuntu";
