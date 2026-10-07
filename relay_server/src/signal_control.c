@@ -18,7 +18,7 @@
 #define YELLOW_MS 2000
 #define RED_MS 5000
 #define COMMAND_INTERVAL_MS 1000
-#define DATA_TIMEOUT_MS 3000
+#define DATA_TIMEOUT_MS 10000
 
 typedef enum {
     SIGNAL_WAIT,
