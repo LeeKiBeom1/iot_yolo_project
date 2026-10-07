@@ -37,7 +37,7 @@ Pi의 최종 서버 주소는 `UBUNTU_SERVER_IP`이며 기본값은 `10.10.16.51
 - Pi는 원본 JSON과 message_id, timestamp_ms를 유지한다.
 - Ubuntu의 기존 `vision_data` 및 UNIQUE message_id 검사를 사용한다.
 - timestamp_ms는 촬영 시각이다. 새 경로의 별도 `timestamp`는 Ubuntu 수신 시각이다. 기존 경로의 Relay 수신 시각과 구분해야 한다.
-- 기존 640×480 bbox 및 차종 검증을 유지한다. Jetson 원본 해상도가 바뀌면 검증 기준도 협의해야 한다.
+- CCTV 영상마다 해상도가 달라질 수 있으므로 서버는 고정 해상도 상한을 검사하지 않는다. bbox는 `x >= 0`, `y >= 0`, `width > 0`, `height > 0`만 검증하고 Client가 보낸 좌표를 그대로 저장한다.
 - 기존 SQLite의 과거 Vision UNSENT 행은 삭제하지 않지만 시작 시 자동 재전송하지 않는다. 이전 프로토콜은 레거시 포트에 남아 있으므로 새 Jetson은 전용 포트를 사용한다.
 - 센서는 기존 SQLite 저장·Ubuntu ACK 동기화를 유지한다. Arduino에 불필요한 ACK를 보내지 않도록 조정했다.
 
@@ -51,6 +51,7 @@ Pi의 최종 서버 주소는 `UBUNTU_SERVER_IP`이며 기본값은 `10.10.16.51
 - Queue 대기 데이터는 PAUSE/연결 종료 시 폐기하며 의도적인 replay는 없다. 이미 소켓/DB 처리 중인 데이터는 완료될 수 있다.
 - DB 복구와 Queue 과부하 상태를 별도로 평가한다. Queue 과부하는 1초 이상 대기하고 Queue가 비며 DB 연결 상태가 정상일 때 재시도한다. 지속 과부하 시 반복 PAUSE가 가능하므로 운영 처리량 검증이 필요하다.
 - 현재 상태/오류는 stderr 로그에 기록한다. `system_events` 테이블 저장 및 전체 장애 이력 복원은 이번 구현에 포함하지 않았다.
+- Relay가 지원하지 않거나 필드 검증에 실패한 Vision JSON을 받으면 타입과 payload 앞부분(최대 512자)을 stderr에 남기고 해당 연결을 종료한다.
 
 ## 자원과 제한
 
@@ -61,7 +62,7 @@ Pi의 최종 서버 주소는 `UBUNTU_SERVER_IP`이며 기본값은 `10.10.16.51
 - keepalive idle 10초/interval 3초/probes 3, TCP_USER_TIMEOUT 20초. 실제 장애 감지 시각은 OS/상황에 따라 달라진다.
 - MariaDB 연결·읽기·쓰기 timeout 각 3초. 일부 서버 측 DB 작업은 클라이언트 timeout 후에도 완료될 수 있다.
 - 새 Vision 서비스는 동시 활성 Jetson 한 대/최종 연결 한 개 기준이다.
-- 5초 주기로 누적 received/forwarded/saved/dropped, Queue 깊이, 최근 DB 작업 지연을 로그에 남긴다. 구간 처리율은 누적 카운터 차이로 계산한다. saved는 신규 INSERT 건수로 중복 수신 건수와 다를 수 있다.
+- Ubuntu는 새 데이터가 들어온 구간에만 5초마다 vision/vehicle_count의 수신·신규 저장 건수, dropped, Queue 깊이, 최근 DB 작업 지연과 최신 차량 수를 한 줄로 남긴다. saved는 신규 INSERT 건수로 중복 수신 건수와 다를 수 있다.
 - 프로세스 강제 종료 시 미저장 Vision은 폐기된다. 전체 프로세스의 신호 기반 graceful shutdown/로그 영속화는 별도 운영 보완 항목이다.
 
 ## 확인한 내용
@@ -77,3 +78,5 @@ Pi의 최종 서버 주소는 `UBUNTU_SERVER_IP`이며 기본값은 `10.10.16.51
 - Vision DB 장애 중 Arduino 형식 메시지: 별도 센서 경로로 최종 저장 확인
 
 남은 확인: 실제 Jetson 연동, 장시간 msg/s·drop·Queue 추이, 물리 네트워크 단절 및 keepalive, 부하/강제 종료 시 처리. 검증 결과만으로 무손실이나 무제한 처리량을 보장하지 않는다.
+<!-- vehicle-count-update -->
+> 2026-10-06 추가: `vision`과 `vehicle_count`는 1초 송신 주기를 사용합니다. 새 차량 수 메시지는 Pi 5002 → Ubuntu 5003 → MariaDB `vehicle_count`로 처리합니다. Pi SQLite에는 저장하지 않습니다. 상세 규격: [vehicle_count.md](vehicle_count.md). 기존 객체별 vision 형식과 센서 경로는 유지합니다.

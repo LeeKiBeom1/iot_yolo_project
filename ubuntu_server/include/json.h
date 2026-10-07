@@ -31,19 +31,15 @@ typedef struct {
 typedef struct {
     char device_id[33];
     char message_id[65];
-    char timestamp[20];
-    int64_t period_start_ms;
-    int64_t period_end_ms;
-    int car_count;
-    int motorcycle_count;
-    int bus_count;
-    int truck_count;
-} TrafficCountMessage;
+    uint64_t frame_id;
+    int64_t timestamp_ms;
+    int vehicle_count;
+} VehicleCountMessage;
 
+int parse_vehicle_count_json(const char *json, VehicleCountMessage *message);
 int parse_message_type(const char *json, char *type, int type_size);
 int parse_sensor_json(const char *json, SensorMessage *message);
 int parse_vision_json(const char *json, VisionMessage *message);
-int parse_traffic_count_json(const char *json, TrafficCountMessage *message);
 int create_ack_json(const char *message_id, const char *status,
                     int duplicate, const char *error_code,
                     char *buffer, int buffer_size);

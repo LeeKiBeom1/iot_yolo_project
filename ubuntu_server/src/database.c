@@ -36,6 +36,63 @@ MYSQL *database_connect(void)
     return database;
 }
 
+int database_save_vehicle_count(MYSQL *database, const VehicleCountMessage *message)
+{
+    static const char insert_sql[] =
+        "INSERT INTO vehicle_count "
+        "(device_id,frame_id,timestamp_ms,vehicle_count,message_id) VALUES(?,?,?,?,?)";
+    static const char duplicate_sql[] =
+        "SELECT (BINARY device_id=BINARY ? AND frame_id=? AND timestamp_ms=? "
+        "AND vehicle_count=?) FROM vehicle_count WHERE message_id=?";
+    MYSQL_STMT *statement;
+    MYSQL_BIND bind[5] = {{0}}, output[1] = {{0}};
+    unsigned long device_length, message_length;
+    unsigned long long frame;
+    long long timestamp;
+    int same = 0, result = DB_SAVE_ERROR;
+    if (!database || !message) return DB_SAVE_ERROR;
+    device_length = (unsigned long)strlen(message->device_id);
+    message_length = (unsigned long)strlen(message->message_id);
+    frame = message->frame_id;
+    timestamp = message->timestamp_ms;
+    bind[0].buffer_type = MYSQL_TYPE_STRING;
+    bind[0].buffer = (void *)message->device_id;
+    bind[0].buffer_length = device_length;
+    bind[0].length = &device_length;
+    bind[1].buffer_type = MYSQL_TYPE_LONGLONG;
+    bind[1].buffer = &frame;
+    bind[1].is_unsigned = 1;
+    bind[2].buffer_type = MYSQL_TYPE_LONGLONG;
+    bind[2].buffer = &timestamp;
+    bind[3].buffer_type = MYSQL_TYPE_LONG;
+    bind[3].buffer = (void *)&message->vehicle_count;
+    bind[4].buffer_type = MYSQL_TYPE_STRING;
+    bind[4].buffer = (void *)message->message_id;
+    bind[4].buffer_length = message_length;
+    bind[4].length = &message_length;
+    statement = mysql_stmt_init(database);
+    if (!statement) return DB_SAVE_ERROR;
+    if (mysql_stmt_prepare(statement, insert_sql, sizeof(insert_sql) - 1) ||
+        mysql_stmt_bind_param(statement, bind)) goto done;
+    if (mysql_stmt_execute(statement) == 0) {
+        result = DB_SAVE_OK;
+    } else if (mysql_stmt_errno(statement) == 1062) {
+        if (mysql_stmt_prepare(statement, duplicate_sql, sizeof(duplicate_sql) - 1) ||
+            mysql_stmt_bind_param(statement, bind) ||
+            mysql_stmt_execute(statement)) goto done;
+        output[0].buffer_type = MYSQL_TYPE_LONG;
+        output[0].buffer = &same;
+        if (!mysql_stmt_bind_result(statement, output) &&
+            !mysql_stmt_store_result(statement) &&
+            !mysql_stmt_fetch(statement))
+            result = same ? DB_SAVE_DUPLICATE : DB_SAVE_CONFLICT;
+    }
+done:
+    if (result == DB_SAVE_ERROR)
+        fprintf(stderr, "vehicle_count save failed: %s\n", mysql_stmt_error(statement));
+    mysql_stmt_close(statement);
+    return result;
+}
 void database_close(MYSQL *database)
 {
     if (database != NULL) {
@@ -354,142 +411,6 @@ int database_save_vision(MYSQL *database, const VisionMessage *message)
         fprintf(stderr, "MariaDB insert failed: %s\n", mysql_stmt_error(statement));
     }
 
-    mysql_stmt_close(statement);
-    return result;
-}
-
-static int check_traffic_count_duplicate(
-    MYSQL *database, const TrafficCountMessage *message)
-{
-    static const char sql[] =
-        "SELECT device_id,period_start_ms,period_end_ms,car_count,"
-        "motorcycle_count,bus_count,truck_count FROM traffic_count "
-        "WHERE message_id=?";
-    MYSQL_STMT *statement;
-    MYSQL_BIND parameter[1];
-    MYSQL_BIND result_bind[7];
-    char device_id[33] = {0};
-    unsigned long message_id_length;
-    unsigned long device_id_length;
-    long long period_start_ms;
-    long long period_end_ms;
-    int car_count, motorcycle_count, bus_count, truck_count;
-    int result = DB_SAVE_ERROR;
-
-    statement = mysql_stmt_init(database);
-    if (statement == NULL ||
-        mysql_stmt_prepare(statement, sql, (unsigned long)strlen(sql)) != 0) {
-        if (statement != NULL) mysql_stmt_close(statement);
-        return DB_SAVE_ERROR;
-    }
-    memset(parameter, 0, sizeof(parameter));
-    message_id_length = (unsigned long)strlen(message->message_id);
-    parameter[0].buffer_type = MYSQL_TYPE_STRING;
-    parameter[0].buffer = (void *)message->message_id;
-    parameter[0].buffer_length = message_id_length;
-    parameter[0].length = &message_id_length;
-    if (mysql_stmt_bind_param(statement, parameter) != 0 ||
-        mysql_stmt_execute(statement) != 0) {
-        mysql_stmt_close(statement);
-        return DB_SAVE_ERROR;
-    }
-
-    memset(result_bind, 0, sizeof(result_bind));
-    result_bind[0].buffer_type = MYSQL_TYPE_STRING;
-    result_bind[0].buffer = device_id;
-    result_bind[0].buffer_length = sizeof(device_id);
-    result_bind[0].length = &device_id_length;
-    result_bind[1].buffer_type = MYSQL_TYPE_LONGLONG;
-    result_bind[1].buffer = &period_start_ms;
-    result_bind[2].buffer_type = MYSQL_TYPE_LONGLONG;
-    result_bind[2].buffer = &period_end_ms;
-    result_bind[3].buffer_type = MYSQL_TYPE_LONG;
-    result_bind[3].buffer = &car_count;
-    result_bind[4].buffer_type = MYSQL_TYPE_LONG;
-    result_bind[4].buffer = &motorcycle_count;
-    result_bind[5].buffer_type = MYSQL_TYPE_LONG;
-    result_bind[5].buffer = &bus_count;
-    result_bind[6].buffer_type = MYSQL_TYPE_LONG;
-    result_bind[6].buffer = &truck_count;
-
-    if (mysql_stmt_bind_result(statement, result_bind) == 0 &&
-        mysql_stmt_store_result(statement) == 0 &&
-        mysql_stmt_fetch(statement) == 0) {
-        result = strcmp(device_id, message->device_id) == 0 &&
-                 period_start_ms == message->period_start_ms &&
-                 period_end_ms == message->period_end_ms &&
-                 car_count == message->car_count &&
-                 motorcycle_count == message->motorcycle_count &&
-                 bus_count == message->bus_count &&
-                 truck_count == message->truck_count
-                     ? DB_SAVE_DUPLICATE : DB_SAVE_CONFLICT;
-    }
-    mysql_stmt_close(statement);
-    return result;
-}
-
-int database_save_traffic_count(MYSQL *database,
-                                const TrafficCountMessage *message)
-{
-    static const char sql[] =
-        "INSERT INTO traffic_count "
-        "(device_id,message_id,timestamp,period_start_ms,period_end_ms,"
-        "car_count,motorcycle_count,bus_count,truck_count) "
-        "VALUES(?,?,STR_TO_DATE(?, '%Y-%m-%dT%H:%i:%s'),?,?,?,?,?,?)";
-    MYSQL_STMT *statement;
-    MYSQL_BIND bind[9];
-    unsigned long device_id_length;
-    unsigned long message_id_length;
-    unsigned long timestamp_length;
-    long long period_start_ms;
-    long long period_end_ms;
-    int result = DB_SAVE_ERROR;
-
-    if (database == NULL || message == NULL) return DB_SAVE_ERROR;
-    statement = mysql_stmt_init(database);
-    if (statement == NULL ||
-        mysql_stmt_prepare(statement, sql, (unsigned long)strlen(sql)) != 0) {
-        if (statement != NULL) mysql_stmt_close(statement);
-        return DB_SAVE_ERROR;
-    }
-    memset(bind, 0, sizeof(bind));
-    device_id_length = (unsigned long)strlen(message->device_id);
-    message_id_length = (unsigned long)strlen(message->message_id);
-    timestamp_length = (unsigned long)strlen(message->timestamp);
-    period_start_ms = message->period_start_ms;
-    period_end_ms = message->period_end_ms;
-
-#define BIND_STRING(index, value, length_value) \
-    bind[index].buffer_type = MYSQL_TYPE_STRING; \
-    bind[index].buffer = (void *)(value); \
-    bind[index].buffer_length = (length_value); \
-    bind[index].length = &(length_value)
-#define BIND_VALUE(index, type, value) \
-    bind[index].buffer_type = (type); \
-    bind[index].buffer = (void *)&(value)
-
-    BIND_STRING(0, message->device_id, device_id_length);
-    BIND_STRING(1, message->message_id, message_id_length);
-    BIND_STRING(2, message->timestamp, timestamp_length);
-    BIND_VALUE(3, MYSQL_TYPE_LONGLONG, period_start_ms);
-    BIND_VALUE(4, MYSQL_TYPE_LONGLONG, period_end_ms);
-    BIND_VALUE(5, MYSQL_TYPE_LONG, message->car_count);
-    BIND_VALUE(6, MYSQL_TYPE_LONG, message->motorcycle_count);
-    BIND_VALUE(7, MYSQL_TYPE_LONG, message->bus_count);
-    BIND_VALUE(8, MYSQL_TYPE_LONG, message->truck_count);
-
-#undef BIND_STRING
-#undef BIND_VALUE
-
-    if (mysql_stmt_bind_param(statement, bind) != 0) {
-        fprintf(stderr, "MariaDB bind failed: %s\n", mysql_stmt_error(statement));
-    } else if (mysql_stmt_execute(statement) == 0) {
-        result = DB_SAVE_OK;
-    } else if (mysql_stmt_errno(statement) == 1062) {
-        result = check_traffic_count_duplicate(database, message);
-    } else {
-        fprintf(stderr, "MariaDB insert failed: %s\n", mysql_stmt_error(statement));
-    }
     mysql_stmt_close(statement);
     return result;
 }

@@ -1,5 +1,7 @@
 # Development Environment Setup
 
+서버의 실행·종료·상태 확인 명령은 [server_operations.md](server_operations.md)를 참고한다.
+
 ## 1. 시스템 구성
 
 본 프로젝트는 다음 3개의 주요 시스템으로 구성한다.

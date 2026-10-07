@@ -36,7 +36,6 @@ static void handle_client(int client_socket, sqlite3 *database,
     const char *message_id;
     SensorMessage sensor_message;
     VisionMessage vision_message;
-    TrafficCountMessage traffic_count_message;
     int receive_result;
     int save_result;
     int sync_result;
@@ -72,16 +71,6 @@ static void handle_client(int client_socket, sqlite3 *database,
             pthread_mutex_lock(&database_mutex);
             save_result = database_save_vision(database, &vision_message);
             pthread_mutex_unlock(&database_mutex);
-        } else if (strcmp(type, "traffic_count") == 0) {
-            if (parse_traffic_count_json(buffer, &traffic_count_message) < 0) {
-                fprintf(stderr, "Invalid traffic count message\n");
-                break;
-            }
-            message_id = traffic_count_message.message_id;
-            pthread_mutex_lock(&database_mutex);
-            save_result = database_save_traffic_count(
-                database, &traffic_count_message);
-            pthread_mutex_unlock(&database_mutex);
         } else {
             fprintf(stderr, "Unsupported message type\n");
             break;
@@ -110,9 +99,6 @@ static void handle_client(int client_socket, sqlite3 *database,
                     database, ubuntu_ip, UBUNTU_PORT);
             } else if (strcmp(type, "vision") == 0) {
                 sync_result = sync_unsent_vision(
-                    database, ubuntu_ip, UBUNTU_PORT);
-            } else {
-                sync_result = sync_unsent_traffic_counts(
                     database, ubuntu_ip, UBUNTU_PORT);
             }
             pthread_mutex_unlock(&database_mutex);
@@ -191,9 +177,6 @@ int main(void)
     }
     /* Historical Vision UNSENT rows remain for manual disposition; the new
        real-time channel must not replay them automatically at startup. */
-    if (sync_unsent_traffic_counts(database, ubuntu_ip, UBUNTU_PORT) < 0) {
-        fprintf(stderr, "Startup traffic count sync deferred\n");
-    }
 
     while (1) {
         client_socket = accept(server_socket, NULL, NULL);

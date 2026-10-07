@@ -97,6 +97,38 @@ static int is_json_integer(cJSON *item)
            item->valuedouble == (double)(uint64_t)item->valuedouble;
 }
 
+int parse_vehicle_count_json(const char *json, VehicleCountMessage *message)
+{
+    cJSON *root, *version, *type, *data, *frame, *timestamp, *count;
+    int result = -1;
+    if (!json || !message) return -1;
+    memset(message, 0, sizeof(*message));
+    root = cJSON_ParseWithOpts(json, NULL, 1);
+    if (!root) return -1;
+    version = cJSON_GetObjectItemCaseSensitive(root, "version");
+    type = cJSON_GetObjectItemCaseSensitive(root, "type");
+    data = cJSON_GetObjectItemCaseSensitive(root, "data");
+    if (!cJSON_IsNumber(version) || version->valuedouble != 1 ||
+        !cJSON_IsString(type) || strcmp(type->valuestring, "vehicle_count") ||
+        !cJSON_IsObject(data) ||
+        copy_json_string(root, "device_id", message->device_id, sizeof(message->device_id)) ||
+        copy_json_string(root, "message_id", message->message_id, sizeof(message->message_id)))
+        goto done;
+    frame = cJSON_GetObjectItemCaseSensitive(data, "frame_id");
+    timestamp = cJSON_GetObjectItemCaseSensitive(data, "timestamp_ms");
+    count = cJSON_GetObjectItemCaseSensitive(data, "vehicle_count");
+    if (!is_json_integer(frame) || !is_json_integer(timestamp) ||
+        timestamp->valuedouble <= 0 || !is_json_integer(count) ||
+        count->valuedouble > INT_MAX) goto done;
+    message->frame_id = (uint64_t)frame->valuedouble;
+    message->timestamp_ms = (int64_t)timestamp->valuedouble;
+    message->vehicle_count = count->valueint;
+    result = 0;
+done:
+    cJSON_Delete(root);
+    return result;
+}
+
 int parse_vision_json(const char *json, VisionMessage *message)
 {
     cJSON *root;
@@ -154,9 +186,7 @@ int parse_vision_json(const char *json, VisionMessage *message)
         !is_json_integer(x) ||
         !is_json_integer(y) ||
         !is_json_integer(width) || width->valueint <= 0 ||
-        !is_json_integer(height) || height->valueint <= 0 ||
-        x->valueint > 640 - width->valueint ||
-        y->valueint > 480 - height->valueint) {
+        !is_json_integer(height) || height->valueint <= 0) {
         goto done;
     }
 
@@ -168,70 +198,6 @@ int parse_vision_json(const char *json, VisionMessage *message)
     message->y = y->valueint;
     message->width = width->valueint;
     message->height = height->valueint;
-    result = 0;
-
-done:
-    cJSON_Delete(root);
-    return result;
-}
-
-int parse_traffic_count_json(const char *json, TrafficCountMessage *message)
-{
-    cJSON *root;
-    cJSON *version;
-    cJSON *type;
-    cJSON *data;
-    cJSON *period_start_ms;
-    cJSON *period_end_ms;
-    cJSON *counts[4];
-    int result = -1;
-    int index;
-    const char *names[] = {
-        "car_count", "motorcycle_count", "bus_count", "truck_count"
-    };
-
-    if (json == NULL || message == NULL) return -1;
-    memset(message, 0, sizeof(*message));
-    root = cJSON_Parse(json);
-    if (root == NULL) return -1;
-
-    version = cJSON_GetObjectItemCaseSensitive(root, "version");
-    type = cJSON_GetObjectItemCaseSensitive(root, "type");
-    data = cJSON_GetObjectItemCaseSensitive(root, "data");
-    if (!cJSON_IsNumber(version) || version->valueint != 1 ||
-        !cJSON_IsString(type) ||
-        strcmp(type->valuestring, "traffic_count") != 0 ||
-        !cJSON_IsObject(data) ||
-        copy_json_string(root, "device_id", message->device_id,
-                         sizeof(message->device_id)) != 0 ||
-        copy_json_string(root, "message_id", message->message_id,
-                         sizeof(message->message_id)) != 0) {
-        goto done;
-    }
-
-    period_start_ms = cJSON_GetObjectItemCaseSensitive(data, "period_start_ms");
-    period_end_ms = cJSON_GetObjectItemCaseSensitive(data, "period_end_ms");
-    for (index = 0; index < 4; index++) {
-        counts[index] = cJSON_GetObjectItemCaseSensitive(data, names[index]);
-    }
-    if (!is_json_integer(period_start_ms) || period_start_ms->valuedouble <= 0 ||
-        !is_json_integer(period_end_ms) ||
-        period_end_ms->valuedouble - period_start_ms->valuedouble != 5000.0) {
-        goto done;
-    }
-    for (index = 0; index < 4; index++) {
-        if (!is_json_integer(counts[index]) ||
-            counts[index]->valuedouble > INT_MAX) {
-            goto done;
-        }
-    }
-
-    message->period_start_ms = (int64_t)period_start_ms->valuedouble;
-    message->period_end_ms = (int64_t)period_end_ms->valuedouble;
-    message->car_count = counts[0]->valueint;
-    message->motorcycle_count = counts[1]->valueint;
-    message->bus_count = counts[2]->valueint;
-    message->truck_count = counts[3]->valueint;
     result = 0;
 
 done:
@@ -309,43 +275,6 @@ int create_vision_json(const VisionMessage *message,
 
 done:
     cJSON_Delete(bbox);
-    cJSON_Delete(data);
-    cJSON_Delete(root);
-    return result;
-}
-
-int create_traffic_count_json(const TrafficCountMessage *message,
-                              char *buffer, int buffer_size)
-{
-    cJSON *root = NULL;
-    cJSON *data = NULL;
-    int result = -1;
-
-    if (message == NULL || buffer == NULL || buffer_size <= 1) return -1;
-    root = cJSON_CreateObject();
-    data = cJSON_CreateObject();
-    if (root == NULL || data == NULL) goto done;
-
-    if (cJSON_AddNumberToObject(root, "version", 1) != NULL &&
-        cJSON_AddStringToObject(root, "type", "traffic_count") != NULL &&
-        cJSON_AddStringToObject(root, "device_id", message->device_id) != NULL &&
-        cJSON_AddStringToObject(root, "message_id", message->message_id) != NULL &&
-        cJSON_AddStringToObject(root, "timestamp", message->timestamp) != NULL &&
-        cJSON_AddNumberToObject(data, "period_start_ms",
-                               (double)message->period_start_ms) != NULL &&
-        cJSON_AddNumberToObject(data, "period_end_ms",
-                               (double)message->period_end_ms) != NULL &&
-        cJSON_AddNumberToObject(data, "car_count", message->car_count) != NULL &&
-        cJSON_AddNumberToObject(data, "motorcycle_count",
-                               message->motorcycle_count) != NULL &&
-        cJSON_AddNumberToObject(data, "bus_count", message->bus_count) != NULL &&
-        cJSON_AddNumberToObject(data, "truck_count", message->truck_count) != NULL) {
-        cJSON_AddItemToObject(root, "data", data);
-        data = NULL;
-        if (cJSON_PrintPreallocated(root, buffer, buffer_size, 0)) result = 0;
-    }
-
-done:
     cJSON_Delete(data);
     cJSON_Delete(root);
     return result;

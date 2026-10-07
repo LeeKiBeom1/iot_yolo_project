@@ -1,6 +1,7 @@
 #include "vision_stream.h"
 #include "vision_io.h"
 #include "json.h"
+#include "signal_control.h"
 
 /* One session/owner: reconnect never replays an old pending frame. */
 static void gateway_session(int upstream, const char *ip, int port)
@@ -15,6 +16,7 @@ static void gateway_session(int upstream, const char *ip, int port)
     for (;;) {
         int64_t now = vision_clock(CLOCK_MONOTONIC);
         struct pollfd fds[2];
+        signal_control_tick();
         if (downstream < 0 && now >= retry_at) {
             downstream = vision_connect(ip, port);
             retry_at = vision_clock(CLOCK_MONOTONIC) + 1000;
@@ -40,14 +42,28 @@ static void gateway_session(int upstream, const char *ip, int port)
         if (fds[0].revents) {
             char json[VISION_LIMIT + 1];
             VisionMessage message;
+            VehicleCountMessage count_message;
+            char type[32];
             if (vision_read(upstream, json) < 0) break;
-            if (parse_vision_json(json, &message) < 0) {
-                fprintf(stderr, "vision invalid payload; closing session\n");
+            if (parse_message_type(json, type, sizeof(type)) < 0) {
+                fprintf(stderr,
+                        "vision invalid payload: missing/invalid type json=%.512s\n",
+                        json);
+                break;
+            }
+            if ((strcmp(type, "vision") == 0 ? parse_vision_json(json, &message) :
+                 strcmp(type, "vehicle_count") == 0 ?
+                    parse_vehicle_count_json(json, &count_message) : -1) < 0) {
+                fprintf(stderr,
+                        "vision invalid payload type=%s json=%.512s\n",
+                        type, json);
                 break;
             }
             received++;
             if (!ready) dropped++;
             else {
+                if (strcmp(type, "vehicle_count") == 0)
+                    signal_control_add_sample(count_message.vehicle_count);
                 if (count == VISION_QUEUE) {
                     head = (head + 1) % VISION_QUEUE; count--; dropped++;
                 }
@@ -73,6 +89,7 @@ lost:
                            "final_connection_lost", &sequence) < 0) break;
     }
     if (downstream >= 0) close(downstream);
+    signal_control_tick();
     fprintf(stderr, "vision gateway session ended pending_discarded=%d\n", count);
 }
 
@@ -88,11 +105,22 @@ void *vision_service(void *unused)
     if (listener < 0) { perror("Vision listener"); return NULL; }
     fprintf(stderr, "Vision gateway :%d -> %s:%d (no ACK)\n", port, ip, final_port);
     for (;;) {
+        struct pollfd listener_poll = {listener, POLLIN, 0};
+        int poll_result;
+
+        signal_control_tick();
+        poll_result = poll(&listener_poll, 1, 100);
+        if (poll_result < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        if (poll_result == 0) continue;
         client = accept(listener, NULL, NULL);
         if (client < 0) { if (errno == EINTR) continue; break; }
         gateway_session(client, ip, final_port);
         close(client);
     }
+    signal_control_close();
     close(listener);
     return NULL;
 }

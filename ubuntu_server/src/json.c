@@ -104,6 +104,38 @@ static int is_json_integer(cJSON *item)
            item->valuedouble == (double)(uint64_t)item->valuedouble;
 }
 
+int parse_vehicle_count_json(const char *json, VehicleCountMessage *message)
+{
+    cJSON *root, *version, *type, *data, *frame, *timestamp, *count;
+    int result = -1;
+    if (!json || !message) return -1;
+    memset(message, 0, sizeof(*message));
+    root = cJSON_ParseWithOpts(json, NULL, 1);
+    if (!root) return -1;
+    version = cJSON_GetObjectItemCaseSensitive(root, "version");
+    type = cJSON_GetObjectItemCaseSensitive(root, "type");
+    data = cJSON_GetObjectItemCaseSensitive(root, "data");
+    if (!cJSON_IsNumber(version) || version->valuedouble != 1 ||
+        !cJSON_IsString(type) || strcmp(type->valuestring, "vehicle_count") ||
+        !cJSON_IsObject(data) ||
+        copy_json_string(root, "device_id", message->device_id, sizeof(message->device_id)) ||
+        copy_json_string(root, "message_id", message->message_id, sizeof(message->message_id)))
+        goto done;
+    frame = cJSON_GetObjectItemCaseSensitive(data, "frame_id");
+    timestamp = cJSON_GetObjectItemCaseSensitive(data, "timestamp_ms");
+    count = cJSON_GetObjectItemCaseSensitive(data, "vehicle_count");
+    if (!is_json_integer(frame) || !is_json_integer(timestamp) ||
+        timestamp->valuedouble <= 0 || !is_json_integer(count) ||
+        count->valuedouble > INT_MAX) goto done;
+    message->frame_id = (uint64_t)frame->valuedouble;
+    message->timestamp_ms = (int64_t)timestamp->valuedouble;
+    message->vehicle_count = count->valueint;
+    result = 0;
+done:
+    cJSON_Delete(root);
+    return result;
+}
+
 int parse_vision_json(const char *json, VisionMessage *message)
 {
     cJSON *root;
@@ -176,9 +208,7 @@ int parse_vision_json(const char *json, VisionMessage *message)
         !is_json_integer(x) ||
         !is_json_integer(y) ||
         !is_json_integer(width) || width->valueint <= 0 ||
-        !is_json_integer(height) || height->valueint <= 0 ||
-        x->valueint > 640 - width->valueint ||
-        y->valueint > 480 - height->valueint) {
+        !is_json_integer(height) || height->valueint <= 0) {
         goto done;
     }
 
@@ -190,72 +220,6 @@ int parse_vision_json(const char *json, VisionMessage *message)
     message->y = y->valueint;
     message->width = width->valueint;
     message->height = height->valueint;
-    result = 0;
-
-done:
-    cJSON_Delete(root);
-    return result;
-}
-
-int parse_traffic_count_json(const char *json, TrafficCountMessage *message)
-{
-    cJSON *root;
-    cJSON *version;
-    cJSON *type;
-    cJSON *data;
-    cJSON *period_start_ms;
-    cJSON *period_end_ms;
-    cJSON *counts[4];
-    int result = -1;
-    int index;
-    const char *names[] = {
-        "car_count", "motorcycle_count", "bus_count", "truck_count"
-    };
-
-    if (json == NULL || message == NULL) return -1;
-    memset(message, 0, sizeof(*message));
-    root = cJSON_Parse(json);
-    if (root == NULL) return -1;
-
-    version = cJSON_GetObjectItemCaseSensitive(root, "version");
-    type = cJSON_GetObjectItemCaseSensitive(root, "type");
-    data = cJSON_GetObjectItemCaseSensitive(root, "data");
-    if (!cJSON_IsNumber(version) || version->valueint != 1 ||
-        !cJSON_IsString(type) ||
-        strcmp(type->valuestring, "traffic_count") != 0 ||
-        !cJSON_IsObject(data) ||
-        copy_json_string(root, "device_id", message->device_id,
-                         sizeof(message->device_id)) != 0 ||
-        copy_json_string(root, "message_id", message->message_id,
-                         sizeof(message->message_id)) != 0 ||
-        copy_json_string(root, "timestamp", message->timestamp,
-                         sizeof(message->timestamp)) != 0) {
-        goto done;
-    }
-
-    period_start_ms = cJSON_GetObjectItemCaseSensitive(data, "period_start_ms");
-    period_end_ms = cJSON_GetObjectItemCaseSensitive(data, "period_end_ms");
-    for (index = 0; index < 4; index++) {
-        counts[index] = cJSON_GetObjectItemCaseSensitive(data, names[index]);
-    }
-    if (!is_json_integer(period_start_ms) || period_start_ms->valuedouble <= 0 ||
-        !is_json_integer(period_end_ms) ||
-        period_end_ms->valuedouble - period_start_ms->valuedouble != 5000.0) {
-        goto done;
-    }
-    for (index = 0; index < 4; index++) {
-        if (!is_json_integer(counts[index]) ||
-            counts[index]->valuedouble > INT_MAX) {
-            goto done;
-        }
-    }
-
-    message->period_start_ms = (int64_t)period_start_ms->valuedouble;
-    message->period_end_ms = (int64_t)period_end_ms->valuedouble;
-    message->car_count = counts[0]->valueint;
-    message->motorcycle_count = counts[1]->valueint;
-    message->bus_count = counts[2]->valueint;
-    message->truck_count = counts[3]->valueint;
     result = 0;
 
 done:

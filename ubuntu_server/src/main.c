@@ -22,7 +22,6 @@ static void handle_client(int clnt_sock, MYSQL *database)
     char type[16];
     SensorMessage sensor_message;
     VisionMessage message;
-    TrafficCountMessage traffic_count_message;
     const char *message_id;
     int receive_result;
     int save_result;
@@ -58,14 +57,6 @@ static void handle_client(int clnt_sock, MYSQL *database)
             }
             save_result = database_save_vision(database, &message);
             message_id = message.message_id;
-        } else if (strcmp(type, "traffic_count") == 0) {
-            if (parse_traffic_count_json(buf, &traffic_count_message) < 0) {
-                fprintf(stderr, "Invalid traffic count message\n");
-                break;
-            }
-            save_result = database_save_traffic_count(
-                database, &traffic_count_message);
-            message_id = traffic_count_message.message_id;
         } else {
             fprintf(stderr, "Unsupported message type\n");
             break;

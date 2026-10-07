@@ -564,25 +564,8 @@ MQTT는 현업 스마트팩토리, 스마트홈, IoT 플랫폼 구축에서 사�
 
 ---
 
-## Traffic Count 메시지
+## Vehicle Count 메시지
 
-기존 `vision` 메시지는 그대로 유지하며, Tracking으로 기준선을 통과한 차량 수를 5초 구간별로 집계해 별도의 `traffic_count` 메시지로 전송한다.
-
-```json
-{
-  "version": 1,
-  "type": "traffic_count",
-  "device_id": "vision-pi-01",
-  "message_id": "vision-pi-01-000042-00000500",
-  "data": {
-    "period_start_ms": 1790046960000,
-    "period_end_ms": 1790046965000,
-    "car_count": 3,
-    "motorcycle_count": 0,
-    "bus_count": 1,
-    "truck_count": 0
-  }
-}
-```
-
-모든 Count는 0 이상의 정수이며 차량이 통과하지 않은 구간도 0으로 전송한다. 기존과 동일하게 4바이트 big-endian 길이 헤더, ACK, `message_id` 중복 방지 규칙을 적용한다.
+기준선 통과량을 의미하던 `traffic_count`는 폐기했다. 현재 혼잡도 입력은 1초마다 전송되는 화면 전체 차량 수 `vehicle_count`를 사용한다. 상세 규격은 [vehicle_count.md](vehicle_count.md)를 따른다.
+<!-- vehicle-count-update -->
+> 2026-10-06 추가: `vision`과 `vehicle_count`는 1초 송신 주기를 사용합니다. 새 차량 수 메시지는 Pi 5002 → Ubuntu 5003 → MariaDB `vehicle_count`로 처리합니다. Pi SQLite에는 저장하지 않습니다. 상세 규격: [vehicle_count.md](vehicle_count.md). 기존 객체별 vision 형식과 센서 경로는 유지합니다.

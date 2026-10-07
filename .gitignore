@@ -18,3 +18,7 @@ Thumbs.db
 
 # Project images
 img/
+
+# STM32 CMake build outputs / local presets
+stm32_signal/build/
+stm32_signal/CMakeUserPresets.json

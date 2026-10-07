@@ -1,0 +1,20 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "STM32: Build",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build.ps1"],
+            "problemMatcher": ["$gcc"],
+            "group": {"kind": "build", "isDefault": true}
+        },
+        {
+            "label": "STM32: Build and Flash",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build.ps1", "-Flash"],
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}

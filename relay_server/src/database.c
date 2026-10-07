@@ -61,7 +61,6 @@ static int check_sensor_duplicate(sqlite3 *database,
     sqlite3_finalize(statement);
     return result;
 }
-
 int database_save_sensor(sqlite3 *database, const SensorMessage *message)
 {
     static const char sql[] =
@@ -277,127 +276,6 @@ int database_mark_vision_sent(sqlite3 *database, const char *message_id)
 {
     static const char sql[] =
         "UPDATE vision_data SET sync_status='SENT' WHERE message_id=?";
-    sqlite3_stmt *statement;
-    int result;
-
-    if (database == NULL || message_id == NULL) return -1;
-    if (sqlite3_prepare_v2(database, sql, -1, &statement, NULL) != SQLITE_OK) {
-        return -1;
-    }
-    sqlite3_bind_text(statement, 1, message_id, -1, SQLITE_TRANSIENT);
-    result = sqlite3_step(statement) == SQLITE_DONE ? 0 : -1;
-    sqlite3_finalize(statement);
-    return result;
-}
-
-static int check_traffic_count_duplicate(
-    sqlite3 *database, const TrafficCountMessage *message)
-{
-    static const char sql[] =
-        "SELECT device_id,period_start_ms,period_end_ms,car_count,"
-        "motorcycle_count,bus_count,truck_count FROM traffic_count "
-        "WHERE message_id=?";
-    sqlite3_stmt *statement;
-    const char *device_id;
-    int result = DB_SAVE_ERROR;
-
-    if (sqlite3_prepare_v2(database, sql, -1, &statement, NULL) != SQLITE_OK) {
-        return DB_SAVE_ERROR;
-    }
-    sqlite3_bind_text(statement, 1, message->message_id, -1, SQLITE_TRANSIENT);
-    if (sqlite3_step(statement) == SQLITE_ROW) {
-        device_id = (const char *)sqlite3_column_text(statement, 0);
-        result = device_id != NULL &&
-                 strcmp(device_id, message->device_id) == 0 &&
-                 sqlite3_column_int64(statement, 1) == message->period_start_ms &&
-                 sqlite3_column_int64(statement, 2) == message->period_end_ms &&
-                 sqlite3_column_int(statement, 3) == message->car_count &&
-                 sqlite3_column_int(statement, 4) == message->motorcycle_count &&
-                 sqlite3_column_int(statement, 5) == message->bus_count &&
-                 sqlite3_column_int(statement, 6) == message->truck_count
-                     ? DB_SAVE_DUPLICATE : DB_SAVE_CONFLICT;
-    }
-    sqlite3_finalize(statement);
-    return result;
-}
-
-int database_save_traffic_count(sqlite3 *database,
-                                const TrafficCountMessage *message)
-{
-    static const char sql[] =
-        "INSERT INTO traffic_count "
-        "(device_id,message_id,timestamp,period_start_ms,period_end_ms,"
-        "car_count,motorcycle_count,bus_count,truck_count) "
-        "VALUES(?,?,datetime('now','localtime'),?,?,?,?,?,?)";
-    sqlite3_stmt *statement;
-    int step_result;
-
-    if (database == NULL || message == NULL) return DB_SAVE_ERROR;
-    if (sqlite3_prepare_v2(database, sql, -1, &statement, NULL) != SQLITE_OK) {
-        fprintf(stderr, "SQLite prepare failed: %s\n", sqlite3_errmsg(database));
-        return DB_SAVE_ERROR;
-    }
-    sqlite3_bind_text(statement, 1, message->device_id, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(statement, 2, message->message_id, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(statement, 3, message->period_start_ms);
-    sqlite3_bind_int64(statement, 4, message->period_end_ms);
-    sqlite3_bind_int(statement, 5, message->car_count);
-    sqlite3_bind_int(statement, 6, message->motorcycle_count);
-    sqlite3_bind_int(statement, 7, message->bus_count);
-    sqlite3_bind_int(statement, 8, message->truck_count);
-    step_result = sqlite3_step(statement);
-    sqlite3_finalize(statement);
-
-    if (step_result == SQLITE_DONE) return DB_SAVE_OK;
-    if (step_result == SQLITE_CONSTRAINT) {
-        return check_traffic_count_duplicate(database, message);
-    }
-    fprintf(stderr, "SQLite insert failed: %s\n", sqlite3_errmsg(database));
-    return DB_SAVE_ERROR;
-}
-
-int database_get_unsent_traffic_count(sqlite3 *database,
-                                      TrafficCountMessage *message)
-{
-    static const char sql[] =
-        "SELECT device_id,message_id,timestamp,period_start_ms,period_end_ms,"
-        "car_count,motorcycle_count,bus_count,truck_count FROM traffic_count "
-        "WHERE sync_status='UNSENT' ORDER BY id LIMIT 1";
-    sqlite3_stmt *statement;
-    int step_result;
-
-    if (database == NULL || message == NULL) return -1;
-    if (sqlite3_prepare_v2(database, sql, -1, &statement, NULL) != SQLITE_OK) {
-        return -1;
-    }
-    step_result = sqlite3_step(statement);
-    if (step_result == SQLITE_ROW) {
-        memset(message, 0, sizeof(*message));
-        snprintf(message->device_id, sizeof(message->device_id), "%s",
-                 (const char *)sqlite3_column_text(statement, 0));
-        snprintf(message->message_id, sizeof(message->message_id), "%s",
-                 (const char *)sqlite3_column_text(statement, 1));
-        snprintf(message->timestamp, sizeof(message->timestamp), "%s",
-                 (const char *)sqlite3_column_text(statement, 2));
-        if (strlen(message->timestamp) == 19) message->timestamp[10] = 'T';
-        message->period_start_ms = sqlite3_column_int64(statement, 3);
-        message->period_end_ms = sqlite3_column_int64(statement, 4);
-        message->car_count = sqlite3_column_int(statement, 5);
-        message->motorcycle_count = sqlite3_column_int(statement, 6);
-        message->bus_count = sqlite3_column_int(statement, 7);
-        message->truck_count = sqlite3_column_int(statement, 8);
-        sqlite3_finalize(statement);
-        return 1;
-    }
-    sqlite3_finalize(statement);
-    return step_result == SQLITE_DONE ? 0 : -1;
-}
-
-int database_mark_traffic_count_sent(sqlite3 *database,
-                                     const char *message_id)
-{
-    static const char sql[] =
-        "UPDATE traffic_count SET sync_status='SENT' WHERE message_id=?";
     sqlite3_stmt *statement;
     int result;
 

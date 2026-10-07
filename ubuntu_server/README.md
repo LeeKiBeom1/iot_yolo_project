@@ -15,8 +15,6 @@ DB_NAME=road_monitor ./ubuntu_server
 
 Sensor 메시지는 `sensor_data`, Vision 메시지는 객체 한 건당 `vision_data` 한 행으로 저장합니다. 저장 성공 후 `status: "ok"` ACK를 반환하며, 이미 저장된 `message_id`가 다시 수신되면 새 행을 만들지 않고 `duplicate: true`를 포함한 성공 ACK를 반환합니다. DB 저장 실패 시에는 `status: "error"`, `error_code: "DATABASE_ERROR"` ACK를 반환합니다.
 
-`traffic_count` 메시지는 5초 집계 구간별 차종 통과 대수를 같은 이름의 테이블에 저장하며 동일한 중복 방지와 ACK 규칙을 적용합니다.
-
 Vision의 `timestamp_ms`는 프레임 획득 시각으로 유지하고, MariaDB의 `timestamp`에는 Relay가 메시지를 수신한 시각을 저장합니다.
 
 같은 `message_id`가 다시 들어오면 기존 행의 실제 데이터와 새 메시지를 비교합니다. 내용까지 같으면 정상 재전송으로 처리하고, 내용이 다르면 `status: "error"`, `error_code: "MESSAGE_ID_CONFLICT"` ACK를 반환합니다.
@@ -46,8 +44,5 @@ Vision 탐지 상세 컬럼을 추가할 때는 다음 마이그레이션을 순
 mariadb -u <DB_USER> -p road_monitor < db/migrations/002_expand_vision_detection.sql
 ```
 
-Traffic Count 테이블 추가:
-
-```bash
-mariadb -u <DB_USER> -p road_monitor < db/migrations/003_add_traffic_count.sql
-```
+<!-- vehicle-count-update -->
+> 2026-10-06 추가: `vision`과 `vehicle_count`는 1초 송신 주기를 사용합니다. 새 차량 수 메시지는 Pi 5002 → Ubuntu 5003 → MariaDB `vehicle_count`로 처리합니다. Pi SQLite에는 저장하지 않습니다. 상세 규격: [vehicle_count.md](../docs/vehicle_count.md). 기존 객체별 vision 형식과 센서 경로는 유지합니다.

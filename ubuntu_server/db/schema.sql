@@ -1,3 +1,17 @@
+CREATE TABLE IF NOT EXISTS vehicle_count (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    device_id VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    message_id VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    frame_id BIGINT UNSIGNED NOT NULL,
+    timestamp_ms BIGINT NOT NULL,
+    vehicle_count INT NOT NULL,
+    UNIQUE KEY uq_vehicle_count_message_id (message_id),
+    KEY idx_vehicle_count_timestamp_ms (timestamp_ms),
+    CONSTRAINT ck_vehicle_count_nonnegative CHECK (vehicle_count >= 0),
+    CONSTRAINT ck_vehicle_count_time CHECK (timestamp_ms > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 CREATE TABLE IF NOT EXISTS sensor_data (
     id INT NOT NULL AUTO_INCREMENT,
     device_id VARCHAR(32) NOT NULL,
@@ -13,7 +27,6 @@ CREATE TABLE IF NOT EXISTS sensor_data (
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_general_ci;
-
 CREATE TABLE IF NOT EXISTS vision_data (
     id INT NOT NULL AUTO_INCREMENT,
     device_id VARCHAR(32) NOT NULL,
@@ -32,24 +45,6 @@ CREATE TABLE IF NOT EXISTS vision_data (
     UNIQUE KEY uq_vision_message_id (message_id),
     KEY idx_vision_timestamp (timestamp),
     KEY idx_vision_timestamp_ms (timestamp_ms)
-) ENGINE=InnoDB
-  DEFAULT CHARSET=utf8mb4
-  COLLATE=utf8mb4_general_ci;
-
-CREATE TABLE IF NOT EXISTS traffic_count (
-    id INT NOT NULL AUTO_INCREMENT,
-    device_id VARCHAR(32) NOT NULL,
-    message_id VARCHAR(64) NOT NULL,
-    timestamp DATETIME NOT NULL,
-    period_start_ms BIGINT NOT NULL,
-    period_end_ms BIGINT NOT NULL,
-    car_count INT NOT NULL,
-    motorcycle_count INT NOT NULL,
-    bus_count INT NOT NULL,
-    truck_count INT NOT NULL,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_traffic_count_message_id (message_id),
-    KEY idx_traffic_count_period_start (period_start_ms)
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_general_ci;

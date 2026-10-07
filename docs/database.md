@@ -367,21 +367,9 @@ MariaDB에 저장된 데이터는 이후 다양한 조건으로 조회한다.
 
 ---
 
-## traffic_count
+## vehicle_count
 
-Tracking으로 기준선을 통과한 차량 수를 5초 구간별로 저장한다. 기존 객체별 `vision_data`는 변경하지 않는다.
-
-| 컬럼 | 의미 |
-| --- | --- |
-| device_id | Vision 장치 ID |
-| message_id | 메시지 중복 방지용 고유 ID |
-| timestamp | Relay 수신 시각 |
-| period_start_ms | 집계 시작 시각(Unix ms) |
-| period_end_ms | 집계 종료 시각(Unix ms) |
-| car_count | 통과한 승용차 수 |
-| motorcycle_count | 통과한 오토바이 수 |
-| bus_count | 통과한 버스 수 |
-| truck_count | 통과한 트럭 수 |
-
-전체 통과 차량 수는 네 차종 Count의 합으로 조회하며 별도 컬럼으로 저장하지 않는다.
+화면 전체의 현재 차량 수를 1초 단위로 저장한다. 폐기된 기준선 통과량용 `traffic_count` 테이블은 사용하지 않는다. 상세 컬럼과 처리 규칙은 [vehicle_count.md](vehicle_count.md)를 따른다.
 * `sensor_data.timestamp`, `vision_data.timestamp`에 인덱스를 적용하여 시간 기준 조회 성능 향상
+<!-- vehicle-count-update -->
+> 2026-10-06 추가: `vision`과 `vehicle_count`는 1초 송신 주기를 사용합니다. 새 차량 수 메시지는 Pi 5002 → Ubuntu 5003 → MariaDB `vehicle_count`로 처리합니다. Pi SQLite에는 저장하지 않습니다. 상세 규격: [vehicle_count.md](vehicle_count.md). 기존 객체별 vision 형식과 센서 경로는 유지합니다.
