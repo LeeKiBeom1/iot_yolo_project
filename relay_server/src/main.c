@@ -11,6 +11,7 @@
 #include "json.h"
 #include "server.h"
 #include "sync.h"
+#include "signal_control.h"
 #include "vision_stream.h"
 #include "vision_io.h"
 
@@ -25,6 +26,8 @@ typedef struct {
     const char *ubuntu_ip;
 } ClientContext;
 
+/* 센서 연결별 스레드가 SQLite 연결 하나를 공유하므로 저장/동기화 구간만 잠근다.
+   Vision의 5002 실시간 경로는 별도 스레드와 소켓을 사용한다. */
 static pthread_mutex_t database_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void handle_client(int client_socket, sqlite3 *database,
@@ -76,8 +79,8 @@ static void handle_client(int client_socket, sqlite3 *database,
             break;
         }
 
-        /* Arduino is send-only; failure to deliver an unsolicited ACK must
-           not prevent its already-persisted sample from being synchronized. */
+        /* Arduino는 송신 전용이다. Arduino에 ACK를 보내지 않고 SQLite 저장 후 Ubuntu로 동기화한다.
+           아래 Vision ACK 분기는 과거 5000 포트 규격의 호환 경로이며 5002에서는 사용하지 않는다. */
         if (strcmp(type, "sensor") != 0 && (create_ack_json(message_id,
                             save_result == DB_SAVE_OK ||
                             save_result == DB_SAVE_DUPLICATE ? "ok" : "error",
@@ -170,13 +173,21 @@ int main(void)
     }
 
     printf("Relay Server waiting on port %d...\n", port);
+    /* Bluetooth 재연결이 멈춰도 Vision 수신/전달은 별도 스레드에서 계속한다. */
+    if (pthread_create(&thread, NULL, signal_control_service, NULL) != 0) {
+        fprintf(stderr, "Failed to start signal controller thread\n");
+        close(server_socket);
+        database_close(database);
+        return 1;
+    }
+    pthread_detach(thread);
     if (pthread_create(&thread, NULL, vision_service, NULL) != 0) return 1;
     pthread_detach(thread);
     if (sync_unsent_sensors(database, ubuntu_ip, UBUNTU_PORT) < 0) {
         fprintf(stderr, "Startup sync deferred\n");
     }
-    /* Historical Vision UNSENT rows remain for manual disposition; the new
-       real-time channel must not replay them automatically at startup. */
+    /* 과거 Vision UNSENT 행은 자동 재전송하지 않는다. 현재 실시간 Vision은 오래된 데이터
+       재생 없이 5002→5003으로 전달하고, 센서만 SQLite 미전송 행을 복구한다. */
 
     while (1) {
         client_socket = accept(server_socket, NULL, NULL);

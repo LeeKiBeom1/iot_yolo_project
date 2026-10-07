@@ -3,7 +3,9 @@
 #include "json.h"
 #include "signal_control.h"
 
-/* One session/owner: reconnect never replays an old pending frame. */
+/* 한 Vision 연결을 이 스레드 하나에서 poll로 처리한다.
+   Ubuntu Control을 Jetson으로 전달하고, 준비된 동안만 JSON을 전달한다.
+   큐는 64개로 제한하며 연결 장애 시 폐기한다. 센서의 영속 동기화와 다른 실시간 정책이다. */
 static void gateway_session(int upstream, const char *ip, int port)
 {
     char queue[VISION_QUEUE][VISION_LIMIT + 1], control[VISION_LIMIT + 1];
@@ -16,7 +18,6 @@ static void gateway_session(int upstream, const char *ip, int port)
     for (;;) {
         int64_t now = vision_clock(CLOCK_MONOTONIC);
         struct pollfd fds[2];
-        signal_control_tick();
         if (downstream < 0 && now >= retry_at) {
             downstream = vision_connect(ip, port);
             retry_at = vision_clock(CLOCK_MONOTONIC) + 1000;
@@ -62,6 +63,7 @@ static void gateway_session(int upstream, const char *ip, int port)
             received++;
             if (!ready) dropped++;
             else {
+                /* 신호 판단은 DB 조회가 아니라 유효한 차량 수를 받은 시점에 수행한다. */
                 if (strcmp(type, "vehicle_count") == 0)
                     signal_control_add_sample(count_message.vehicle_count);
                 if (count == VISION_QUEUE) {
@@ -89,7 +91,6 @@ lost:
                            "final_connection_lost", &sequence) < 0) break;
     }
     if (downstream >= 0) close(downstream);
-    signal_control_tick();
     fprintf(stderr, "vision gateway session ended pending_discarded=%d\n", count);
 }
 
@@ -108,7 +109,6 @@ void *vision_service(void *unused)
         struct pollfd listener_poll = {listener, POLLIN, 0};
         int poll_result;
 
-        signal_control_tick();
         poll_result = poll(&listener_poll, 1, 100);
         if (poll_result < 0) {
             if (errno == EINTR) continue;
@@ -120,7 +120,6 @@ void *vision_service(void *unused)
         gateway_session(client, ip, final_port);
         close(client);
     }
-    signal_control_close();
     close(listener);
     return NULL;
 }

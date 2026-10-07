@@ -24,7 +24,9 @@ typedef struct {
     long long latency_ms;
 } VisionSession;
 
-/* Only this worker owns its MariaDB connection; sensor DB is independent. */
+/* DB 작업 스레드만 이 MariaDB 연결을 사용한다. 소켓 스레드는 수신과 Control에 집중한다.
+   mutex는 큐/공유 상태를 보호하며 SQL 실행 중에는 풀어 수신을 막지 않는다.
+   센서는 별도의 MariaDB 연결을 사용하므로 두 경로의 연결 객체를 공유하지 않는다. */
 static void *vision_writer(void *arg)
 {
     VisionSession *s = arg;
@@ -107,6 +109,9 @@ failed:
     return NULL;
 }
 
+/* 소켓 소유자는 이 함수 하나다. ready 변화 때만 Control을 보내 로그/통신 도배를 줄인다.
+   큐가 가득 차거나 DB가 끊기면 pause하고 남은 데이터는 폐기한다.
+   객체별 ACK/재전송을 보장하는 센서 경로와 혼동하지 않도록 dropped를 기록한다. */
 static void final_session(int fd)
 {
     VisionSession s = {0};

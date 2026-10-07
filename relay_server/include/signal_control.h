@@ -2,7 +2,6 @@
 #define SIGNAL_CONTROL_H
 
 void signal_control_add_sample(int vehicle_count);
-void signal_control_tick(void);
-void signal_control_close(void);
+void *signal_control_service(void *unused);
 
 #endif

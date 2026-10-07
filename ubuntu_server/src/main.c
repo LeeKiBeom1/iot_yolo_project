@@ -95,7 +95,8 @@ int main(void)
     if (mysql_library_init(0, NULL, NULL) != 0) return 1;
     if (pthread_create(&vision_thread, NULL, vision_service, NULL) != 0) return 1;
     pthread_detach(vision_thread);
-    /* The Vision endpoint must remain reachable and PAUSED during DB outages. */
+    /* DB가 끊겨도 Vision 포트는 먼저 열어 Jetson에 pause 상태를 전달한다.
+       아래 센서 경로와 Vision 스레드는 각각 별도의 DB 연결을 소유한다. */
     while ((database = database_connect()) == NULL) {
         struct timespec delay = {1, 0};
         nanosleep(&delay, NULL);
@@ -147,6 +148,21 @@ int main(void)
             break;
         }
 
+        /* 오래 켜 둔 서버의 DB 세션이 끊겼다면 새 연결로 복구한다.
+           복구 실패 시 ACK를 보내지 않고 닫는다. Relay는 해당 행을 UNSENT로 유지한다. */
+        if (mysql_ping(database) != 0) {
+            database_close(database);
+            database = database_connect();
+        }
+        if (database == NULL) {
+            close(clnt_sock);
+            /* 다음 accept 이후 mysql_ping(NULL)을 호출하지 않도록 여기서 복구를 기다린다. */
+            while ((database = database_connect()) == NULL) {
+                struct timespec delay = {1, 0};
+                nanosleep(&delay, NULL);
+            }
+            continue;
+        }
         handle_client(clnt_sock, database);
         close(clnt_sock);
     }

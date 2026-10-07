@@ -20,6 +20,8 @@ void database_close(sqlite3 *database)
     if (database != NULL) sqlite3_close(database);
 }
 
+/* 같은 message_id의 원본 값이 같으면 재전송, 다르면 ID 충돌이다.
+   Relay 수신 시각과 sync_status는 Relay 관리 값이므로 비교하지 않는다. */
 static int check_sensor_duplicate(sqlite3 *database,
                                   const SensorMessage *message)
 {
@@ -93,6 +95,7 @@ int database_save_sensor(sqlite3 *database, const SensorMessage *message)
     return DB_SAVE_ERROR;
 }
 
+/* 가장 오래된 미전송 행 하나를 읽는다. ACK 후 SENT 처리와 반복해 순서대로 동기화한다. */
 int database_get_unsent_sensor(sqlite3 *database, SensorMessage *message)
 {
     static const char sql[] =

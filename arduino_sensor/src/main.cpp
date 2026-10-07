@@ -24,6 +24,8 @@ uint32_t sequence = 0;
 bool wifiConnected = false;
 bool tcpConnected = false;
 
+// UNO의 작은 RAM을 위해 응답 전체 대신 기대 문자열과 일치한 길이만 기억한다.
+// ESP의 AT 응답이며, 서버가 DB에 저장했다는 application ACK는 아니다.
 bool waitForResponse(const char *expected, unsigned long timeoutMs) {
   uint8_t matched = 0;
   const unsigned long startedAt = millis();
@@ -102,6 +104,7 @@ bool connectRelay() {
   return tcpConnected;
 }
 
+// TCP는 메시지 경계가 없으므로 JSON 바이트 수를 big-endian 4바이트로 먼저 보낸다.
 bool sendFrame(const char *json) {
   const uint16_t payloadSize = strlen(json);
   const uint16_t frameSize = payloadSize + 4;
@@ -134,6 +137,8 @@ bool ensureConnection() {
   return tcpConnected;
 }
 
+// 재부팅해도 같은 ID를 만들지 않도록 실행 번호만 EEPROM에 저장한다.
+// 매 측정마다 쓰지 않아 EEPROM 쓰기 횟수를 줄인다. sequence는 RAM에서 증가한다.
 void initializeMessageId() {
   EEPROM.get(0, bootId);
   if (bootId == UINT32_MAX) {
@@ -155,11 +160,17 @@ bool sendSensorData(int light, float temperature, float humidity, int sound) {
            static_cast<unsigned long>(sequence));
   dtostrf(temperature, 1, 1, temperatureText);
   dtostrf(humidity, 1, 1, humidityText);
-  snprintf(json, sizeof(json),
+  const int jsonLength = snprintf(json, sizeof(json),
            "{\"version\":1,\"type\":\"sensor\",\"device_id\":\"%s\","
            "\"message_id\":\"%s\",\"data\":{\"light\":%d,"
            "\"temperature\":%s,\"humidity\":%s,\"sound\":%d}}",
            DEVICE_ID, messageId, light, temperatureText, humidityText, sound);
+
+  // 버퍼를 무작정 키우지 않고, 잘린 JSON은 송신하지 않는다.
+  if (jsonLength < 0 || static_cast<size_t>(jsonLength) >= sizeof(json)) {
+    Serial.println("Sensor JSON too large");
+    return false;
+  }
 
   Serial.print("Sending: ");
   Serial.println(messageId);
@@ -169,6 +180,7 @@ bool sendSensorData(int light, float temperature, float humidity, int sound) {
   }
 
   tcpConnected = false;
+  wifiConnected = false; // Wi-Fi 단절도 가능하므로 다음 측정 때 연결부터 다시 확인한다.
   sendCommand("AT+CIPCLOSE", "OK", 2000);
   return false;
 }
@@ -250,5 +262,6 @@ void loop() {
   const bool sent = sendSensorData(light, temperature, humidity, sound);
   Serial.println(sent ? "Sensor data sent" : "Sensor data send failed");
 
+  // 측정·송신 완료 후 5초 대기한다. 실제 측정 간격은 통신 소요 시간만큼 더 길어진다.
   delay(MEASURE_INTERVAL_MS);
 }

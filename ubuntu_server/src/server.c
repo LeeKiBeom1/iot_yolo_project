@@ -6,6 +6,9 @@
 #include <string.h>
 #include <sys/socket.h>
 
+/* TCP는 요청한 바이트 수보다 적게 처리할 수 있어 남은 부분을 반복 송수신한다.
+   EINTR은 신호에 의한 중단이므로 재시도한다. MSG_NOSIGNAL은 연결 단절 시
+   서버 전체가 SIGPIPE로 종료되는 것을 막고 오류를 호출자에게 돌려준다. */
 static int send_all(int socket_fd, const void *buffer, int length)
 {
     const char *data = buffer;
@@ -71,6 +74,7 @@ int send_frame(int socket_fd, const char *json)
         return -1;
     }
 
+    /* JSON 문자 개수가 아닌 본문 바이트 수를 네트워크 순서(big-endian)로 보낸다. */
     network_size = htonl(payload_size);
 
     if (send_all(socket_fd, &network_size, sizeof(network_size)) < 0) {
@@ -107,6 +111,7 @@ int recv_frame(int socket_fd, char *buffer, int buffer_size)
         return -1;
     }
 
+    /* C 문자열 끝 표시는 전송 길이에 포함하지 않고 수신 버퍼에만 추가한다. */
     buffer[payload_size] = '\0';
     return (int)payload_size;
 }

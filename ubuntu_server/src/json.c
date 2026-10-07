@@ -26,7 +26,7 @@ int parse_message_type(const char *json, char *type, int type_size)
     int result;
 
     if (json == NULL || type == NULL || type_size <= 1) return -1;
-    root = cJSON_Parse(json);
+    root = cJSON_ParseWithOpts(json, NULL, 1);
     if (root == NULL) return -1;
     result = copy_json_string(root, "type", type, type_size);
     cJSON_Delete(root);
@@ -48,14 +48,14 @@ int parse_sensor_json(const char *json, SensorMessage *message)
     if (json == NULL || message == NULL) return -1;
     memset(message, 0, sizeof(*message));
 
-    root = cJSON_Parse(json);
+    root = cJSON_ParseWithOpts(json, NULL, 1);
     if (root == NULL) return -1;
 
     version = cJSON_GetObjectItemCaseSensitive(root, "version");
     type = cJSON_GetObjectItemCaseSensitive(root, "type");
     data = cJSON_GetObjectItemCaseSensitive(root, "data");
 
-    if (!cJSON_IsNumber(version) || version->valueint != 1 ||
+    if (!cJSON_IsNumber(version) || version->valuedouble != 1 ||
         !cJSON_IsString(type) || strcmp(type->valuestring, "sensor") != 0 ||
         !cJSON_IsObject(data) ||
         copy_json_string(root, "device_id", message->device_id,
@@ -96,6 +96,8 @@ static int valid_vision_class(int class_id, const char *class_name)
            (class_id == 7 && strcmp(class_name, "truck") == 0);
 }
 
+/* cJSON 숫자는 double이다. 정수 여부와 정확하게 표현 가능한 범위를 함께 확인한다.
+   frame/time은 64비트로, bbox/count는 아래에서 별도로 INT_MAX까지 제한한다. */
 static int is_json_integer(cJSON *item)
 {
     return cJSON_IsNumber(item) &&
@@ -156,7 +158,7 @@ int parse_vision_json(const char *json, VisionMessage *message)
     if (json == NULL || message == NULL) return -1;
     memset(message, 0, sizeof(*message));
 
-    root = cJSON_Parse(json);
+    root = cJSON_ParseWithOpts(json, NULL, 1);
     if (root == NULL) return -1;
 
     version = cJSON_GetObjectItemCaseSensitive(root, "version");
@@ -165,7 +167,7 @@ int parse_vision_json(const char *json, VisionMessage *message)
     bbox = cJSON_IsObject(data)
         ? cJSON_GetObjectItemCaseSensitive(data, "bbox") : NULL;
 
-    if (!cJSON_IsNumber(version) || version->valueint != 1 ||
+    if (!cJSON_IsNumber(version) || version->valuedouble != 1 ||
         !cJSON_IsString(type) || strcmp(type->valuestring, "vision") != 0 ||
         !cJSON_IsObject(data) || !cJSON_IsObject(bbox) ||
         copy_json_string(root, "device_id", message->device_id,
@@ -205,10 +207,10 @@ int parse_vision_json(const char *json, VisionMessage *message)
         !valid_vision_class(class_id->valueint, message->class_name) ||
         !cJSON_IsNumber(confidence) || confidence->valuedouble < 0.0 ||
         confidence->valuedouble > 1.0 ||
-        !is_json_integer(x) ||
-        !is_json_integer(y) ||
-        !is_json_integer(width) || width->valueint <= 0 ||
-        !is_json_integer(height) || height->valueint <= 0) {
+        !is_json_integer(x) || x->valuedouble > INT_MAX ||
+        !is_json_integer(y) || y->valuedouble > INT_MAX ||
+        !is_json_integer(width) || width->valuedouble > INT_MAX || width->valueint <= 0 ||
+        !is_json_integer(height) || height->valuedouble > INT_MAX || height->valueint <= 0) {
         goto done;
     }
 

@@ -46,7 +46,9 @@ static inline void vision_socket(int fd)
     fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
 }
 
-/* One absolute monotonic deadline per complete frame; idle is polled separately. */
+/* TCP read/write 한 번에 전체 메시지가 처리된다고 보장할 수 없다.
+   처리한 바이트 수를 더하며 나머지를 반복한다. 헤더와 본문은 하나의 1초 마감을 공유해
+   일부 바이트만 계속 보내는 상대 때문에 무한정 기다리지 않는다. */
 static inline int vision_io(int fd, void *data, size_t size, int writing,
                             int64_t deadline)
 {
@@ -81,6 +83,8 @@ static inline int vision_write(int fd, const char *json)
 
 static inline int vision_read(int fd, char *json)
 {
+    /* 메모리 보호를 위해 길이부터 검사한다. 호출자의 버퍼는 VISION_LIMIT+1이어야 한다.
+       4바이트 길이에는 헤더 자신이 아니라 UTF-8 JSON 본문 바이트 수만 들어간다. */
     uint32_t header, n;
     int64_t deadline = vision_clock(CLOCK_MONOTONIC) + 1000;
     if (vision_io(fd, &header, 4, 0, deadline) < 0) return -1;
@@ -133,7 +137,8 @@ fail:
     return -1;
 }
 
-/* Called by the single socket TX owner. Reasons are fixed local constants. */
+/* 소켓을 담당하는 스레드 하나에서만 Control을 전송한다.
+   DB 준비 상태를 pause/resume으로 전달하며 객체별 저장 ACK를 대신하는 것은 아니다. */
 static inline int vision_control(int fd, const char *device, int ready,
                                  const char *reason, unsigned long *sequence)
 {

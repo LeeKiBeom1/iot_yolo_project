@@ -49,7 +49,10 @@ static uint8_t command_length;
 static uint8_t command_overflow;
 static uint32_t last_command_ms;
 static uint32_t last_byte_ms;
-static uint8_t link_active;
+/* 통신 장애 표시: 1초 켜짐 / 1초 꺼짐. 정상 빨강 신호와 구분한다. */
+static uint32_t last_blink_ms;
+static uint8_t fault_active;
+static uint8_t fault_red_on;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -64,7 +67,8 @@ static void MX_USART1_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-/* External LEDs: PB0 red, PA1 yellow, PA4 green (active high). */
+/* LED는 출력 HIGH일 때 켜진다. 색을 바꿀 때 먼저 모두 꺼서 동시 점등을 막는다.
+   빨강 PB0 / 노랑 PA1 / 초록 PA4. */
 static void Signal_Set(GPIO_TypeDef *port, uint16_t pin)
 {
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
@@ -79,6 +83,7 @@ static void Signal_Reply(const char *reply)
 
 static void Signal_Command(void)
 {
+  /* 개행까지 모은 문자열만 해석한다. 지원하지 않는 명령은 시간을 갱신하지 않는다. */
   command[command_length] = '\0';
   if (!command_overflow && strcmp(command, "SET,1,RED") == 0) {
     Signal_Set(GPIOB, GPIO_PIN_0);
@@ -94,11 +99,13 @@ static void Signal_Command(void)
     return;
   }
   last_command_ms = HAL_GetTick();
-  link_active = 1;
+  fault_active = 0; /* 정상 명령 수신 즉시 점멸을 끝내고 지정 색을 유지한다. */
 }
 
 static void Signal_Poll(void)
 {
+  /* delay(1000)로 깜빡이면 그동안 명령을 못 받는다. 1ms UART 폴링과
+     경과 시간 비교를 함께 사용해 점멸 중에도 정상 명령을 즉시 처리한다. */
   uint8_t byte;
   uint32_t now = HAL_GetTick();
   if ((command_length || command_overflow) && now - last_byte_ms >= 1000) {
@@ -118,12 +125,23 @@ static void Signal_Poll(void)
     }
   } else if (result == HAL_ERROR) {
     command_length = 0;
-    command_overflow = 1; /* Discard damaged line until newline or timeout. */
+    command_overflow = 1; /* 손상된 줄은 개행 또는 1초 경과까지 폐기한다. */
   }
-  if (link_active && HAL_GetTick() - last_command_ms >= 5000) {
+  /* 부팅 후에도 5초 동안 명령이 없으면 장애 상태로 진입한다.
+     unsigned 시간차를 사용하므로 HAL_GetTick()의 순환에도 동작한다. */
+  now = HAL_GetTick();
+  if (!fault_active && now - last_command_ms >= 5000) {
     Signal_Set(GPIOB, GPIO_PIN_0);
-    link_active = 0;
+    fault_active = 1;
+    fault_red_on = 1;
+    last_blink_ms = now;
     Signal_Reply("STATE,1,RED,TIMEOUT\n");
+  }
+  if (fault_active && now - last_blink_ms >= 1000) {
+    last_blink_ms = now;
+    fault_red_on = !fault_red_on;
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0,
+                      fault_red_on ? GPIO_PIN_SET : GPIO_PIN_RESET);
   }
 }
 

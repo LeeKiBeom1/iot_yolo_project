@@ -36,6 +36,8 @@ MYSQL *database_connect(void)
     return database;
 }
 
+/* 차량 수는 해당 화면의 순간 관측값이지 누적 통과 대수가 아니다.
+   message_id UNIQUE와 원본 값 비교로 재전송 중복과 다른 데이터의 ID 충돌을 구분한다. */
 int database_save_vehicle_count(MYSQL *database, const VehicleCountMessage *message)
 {
     static const char insert_sql[] =
